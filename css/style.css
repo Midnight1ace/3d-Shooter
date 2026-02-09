@@ -360,6 +360,7 @@ body::before {
 #start-screen,
 #pause-screen,
 #game-over-screen,
+#upgrade-screen,
 #loading-screen {
     position: fixed;
     inset: 0;
@@ -375,6 +376,7 @@ body::before {
 #start-screen.hidden,
 #pause-screen.hidden,
 #game-over-screen.hidden,
+#upgrade-screen.hidden,
 #loading-screen.hidden {
     display: none;
 }
