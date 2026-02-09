@@ -82,38 +82,69 @@
 
     <!-- Start Screen -->
     <div id="start-screen" role="dialog" aria-modal="true">
-        <div class="menu-card">
-            <h1 class="title-font">3D Shooter</h1>
-            <p class="subtitle">Survive escalating waves in a fast, responsive arena.</p>
-            <div class="menu-grid">
+        <div class="menu-card hero">
+            <div class="hero-left">
+                <span class="eyebrow">Operation Amberline</span>
+                <h1 class="title-font">3D Shooter</h1>
+                <p class="subtitle">Survive escalating waves in a fast, responsive arena. Stay mobile, manage ammo, and push the score.</p>
+                <div class="hero-actions">
+                    <button id="start-button" class="primary">Start Mission</button>
+                </div>
+                <div class="hero-meta">
+                    <span class="meta-chip">Wave-Based</span>
+                    <span class="meta-chip">Arena Combat</span>
+                    <span class="meta-chip">Score Attack</span>
+                </div>
+                <span class="menu-hint">Press Enter to start</span>
+            </div>
+            <div class="hero-right">
                 <div class="menu-panel">
                     <h3>Controls</h3>
-                    <ul>
-                        <li>WASD - Move</li>
-                        <li>Mouse - Look/Aim</li>
-                        <li>Left Click - Shoot</li>
-                        <li>R - Reload</li>
-                        <li>Shift - Sprint</li>
-                        <li>ESC - Pause</li>
+                    <ul class="control-list">
+                        <li><span class="key">WASD</span> Move</li>
+                        <li><span class="key">Mouse</span> Aim / Look</li>
+                        <li><span class="key">LMB</span> Shoot</li>
+                        <li><span class="key">R</span> Reload</li>
+                        <li><span class="key">Shift</span> Sprint</li>
+                        <li><span class="key">Esc</span> Pause</li>
                     </ul>
                 </div>
                 <div class="menu-panel">
-                    <h3>Tips</h3>
-                    <ul>
-                        <li>Keep moving to avoid melee hits.</li>
-                        <li>Reload before you are empty.</li>
-                        <li>Use cover to regroup between waves.</li>
+                    <h3>Combat Tips</h3>
+                    <ul class="control-list">
+                        <li><span class="key">Keep Moving</span> to avoid melee hits.</li>
+                        <li><span class="key">Reload Early</span> before you are empty.</li>
+                        <li><span class="key">Use Cover</span> to reset between waves.</li>
                     </ul>
                 </div>
+                <div class="menu-panel intel">
+                    <h3>Mission Intel</h3>
+                    <div class="intel-grid">
+                        <div>
+                            <div class="intel-label">Threat</div>
+                            <div class="intel-value">Adaptive</div>
+                        </div>
+                        <div>
+                            <div class="intel-label">Objective</div>
+                            <div class="intel-value">Survive</div>
+                        </div>
+                        <div>
+                            <div class="intel-label">Reward</div>
+                            <div class="intel-value">Score</div>
+                        </div>
+                        <div>
+                            <div class="intel-label">Control</div>
+                            <div class="intel-value">Precision</div>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <button id="start-button" class="primary">Start Mission</button>
-            <span class="menu-hint">Press Enter to start</span>
         </div>
     </div>
 
     <!-- Pause Screen -->
     <div id="pause-screen" class="hidden" role="dialog" aria-modal="true">
-        <div class="menu-card">
+        <div class="menu-card compact">
             <h2 class="title-font">Paused</h2>
             <p class="subtitle">Take a breath. Adjust UI scale with +/-.</p>
             <button id="resume-button" class="primary">Resume</button>
@@ -123,7 +154,7 @@
 
     <!-- Game Over Screen -->
     <div id="game-over-screen" class="hidden" role="dialog" aria-modal="true">
-        <div class="menu-card">
+        <div class="menu-card compact">
             <h2 class="title-font">Game Over</h2>
             <p class="stat-line">Final Score: <span id="final-score">0</span></p>
             <p class="stat-line">Wave Reached: <span id="final-wave">1</span></p>
