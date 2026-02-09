@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Shooter Game</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <!-- Game Canvas Container -->
+    <div id="game-container">
+        <canvas id="game-canvas"></canvas>
+    </div>
+
+    <!-- HUD Overlay -->
+    <div id="hud" class="hidden">
+        <div id="health-bar-container">
+            <div id="health-bar"></div>
+            <span id="health-text">100</span>
+        </div>
+        
+        <div id="ammo-counter">
+            <span id="current-ammo">30</span> / <span id="total-ammo">120</span>
+        </div>
+        
+        <div id="score-display">
+            Score: <span id="score">0</span>
+        </div>
+        
+        <div id="wave-display">
+            Wave: <span id="wave">1</span>
+        </div>
+        
+        <button id="spawn-btn" style="position:absolute;top:70px;left:30px;padding:8px 15px;background:#ff4444;color:white;border:none;border-radius:5px;cursor:pointer;font-size:14px;">Spawn Enemy</button>
+    </div>
+
+    <!-- Start Screen -->
+    <div id="start-screen">
+        <h1>3D Shooter</h1>
+        <p>Survive the enemy waves!</p>
+        <div class="controls-info">
+            <h3>Controls</h3>
+            <p>WASD - Move</p>
+            <p>Mouse - Look/Aim</p>
+            <p>Left Click - Shoot</p>
+            <p>R - Reload</p>
+            <p>ESC - Pause</p>
+        </div>
+        <button id="start-button">Click to Start</button>
+    </div>
+
+    <!-- Pause Screen -->
+    <div id="pause-screen" class="hidden">
+        <h2>PAUSED</h2>
+        <button id="resume-button">Resume</button>
+        <button id="restart-button">Restart</button>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div id="game-over-screen" class="hidden">
+        <h2>GAME OVER</h2>
+        <p>Final Score: <span id="final-score">0</span></p>
+        <p>Wave Reached: <span id="final-wave">1</span></p>
+        <button id="restart-game-button">Play Again</button>
+    </div>
+
+    <!-- Loading Screen -->
+    <div id="loading-screen">
+        <h2>Loading...</h2>
+    </div>
+
+    <!-- Damage Overlay -->
+    <div id="damage-overlay"></div>
+    
+    <!-- Muzzle Flash -->
+    <div id="muzzle-flash"></div>
+
+    <!-- Three.js Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    
+    <!-- Game Modules -->
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>
