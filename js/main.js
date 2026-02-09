@@ -9,6 +9,7 @@ const GameState = {
     START: 'start',
     PLAYING: 'playing',
     PAUSED: 'paused',
+    CHOOSING: 'choosing',
     GAME_OVER: 'game_over'
 };
 
@@ -29,12 +30,18 @@ const Config = {
     weaponDamage: 35,
     weaponRange: 200,
     reloadDuration: 1500,
+    reloadSprintMultiplier: 1.35,
+    perfectReloadWindow: 0.18,
+    perfectReloadBonus: 2,
     
     // Enemies
     enemySpawnRate: 3000,
     enemySpeed: 0.06,
     enemyDamage: 15,
     lowAmmoThreshold: 5,
+    timeSlowIntensity: 0.6,
+    timeSlowDuration: 0.35,
+    timeSlowRecovery: 0.2,
     
     // Game
     maxHealth: 100,
@@ -49,16 +56,135 @@ const Config = {
     pillarCount: 6
 };
 
+const WeaponCatalog = [
+    {
+        id: 'pistol-vx9',
+        name: 'VX-9 Pistol',
+        type: 'pistol',
+        damage: 22,
+        fireRate: 220,
+        range: 140,
+        magSize: 12,
+        reserveMax: 72,
+        recoil: 0.05,
+        spread: 0.01,
+        pellets: 1,
+        model: 'pistol'
+    },
+    {
+        id: 'pistol-mk2',
+        name: 'MK-2 Sidearm',
+        type: 'pistol',
+        damage: 18,
+        fireRate: 160,
+        range: 130,
+        magSize: 15,
+        reserveMax: 90,
+        recoil: 0.04,
+        spread: 0.012,
+        pellets: 1,
+        model: 'pistol'
+    },
+    {
+        id: 'smg-rapid',
+        name: 'Rapid SMG',
+        type: 'smg',
+        damage: 14,
+        fireRate: 75,
+        range: 110,
+        magSize: 28,
+        reserveMax: 140,
+        recoil: 0.04,
+        spread: 0.018,
+        pellets: 1,
+        model: 'smg'
+    },
+    {
+        id: 'smg-compact',
+        name: 'Compact SMG',
+        type: 'smg',
+        damage: 16,
+        fireRate: 90,
+        range: 115,
+        magSize: 24,
+        reserveMax: 120,
+        recoil: 0.05,
+        spread: 0.016,
+        pellets: 1,
+        model: 'smg'
+    },
+    {
+        id: 'rifle-guardian',
+        name: 'Guardian Rifle',
+        type: 'rifle',
+        damage: 26,
+        fireRate: 140,
+        range: 190,
+        magSize: 25,
+        reserveMax: 125,
+        recoil: 0.06,
+        spread: 0.012,
+        pellets: 1,
+        model: 'rifle'
+    },
+    {
+        id: 'rifle-horizon',
+        name: 'Horizon Rifle',
+        type: 'rifle',
+        damage: 30,
+        fireRate: 170,
+        range: 200,
+        magSize: 22,
+        reserveMax: 110,
+        recoil: 0.07,
+        spread: 0.011,
+        pellets: 1,
+        model: 'rifle'
+    },
+    {
+        id: 'shotgun-breach',
+        name: 'Breach Shotgun',
+        type: 'shotgun',
+        damage: 12,
+        fireRate: 420,
+        range: 80,
+        magSize: 8,
+        reserveMax: 40,
+        recoil: 0.1,
+        spread: 0.07,
+        pellets: 6,
+        model: 'shotgun'
+    },
+    {
+        id: 'shotgun-heavy',
+        name: 'Atlas Shotgun',
+        type: 'shotgun',
+        damage: 14,
+        fireRate: 460,
+        range: 85,
+        magSize: 6,
+        reserveMax: 36,
+        recoil: 0.12,
+        spread: 0.08,
+        pellets: 7,
+        model: 'shotgun'
+    }
+];
+
 // Global Variables
 let scene, camera, renderer;
 let player, weapon;
 let enemies = [];
 let bullets = [];
+let mapObstacles = [];
+let currentLayout = null;
 let clock;
 let gameState = GameState.LOADING;
 let score = 0;
 let wave = 1;
+let maxHealth = Config.maxHealth;
 let health = Config.maxHealth;
+let maxAmmo = Config.maxAmmo;
 let ammo = Config.maxAmmo;
 let reserveAmmo = Config.totalAmmo;
 let isPointerLocked = false;
@@ -68,11 +194,25 @@ let lowPowerMode = false;
 let loadingTimer = null;
 let loadingProgress = 0;
 let reloadStartTime = 0;
+let reloadDurationCurrent = Config.reloadDuration;
 let damageDirectionTimeout = null;
 let lowAmmoPromptCooldown = 0;
 let promptTimeouts = [];
 let promptHideTimeout = null;
 let debugMode = false;
+let damageMultiplier = 1;
+let reloadSpeedMultiplier = 1;
+let moveSpeedMultiplier = 1;
+let magSizeMultiplier = 1;
+let timeSlowIntensity = Config.timeSlowIntensity;
+let timeSlowDuration = Config.timeSlowDuration;
+let timeScale = 1;
+let timeSlowTimer = 0;
+let cameraShake = 0;
+const shakeOffset = new THREE.Vector3();
+let upgradeOptions = [];
+let currentWeaponId = 'rifle-guardian';
+let weaponInventory = {};
 
 // DOM Elements
 const gameCanvas = document.getElementById('game-canvas');
@@ -96,6 +236,16 @@ const loadingFill = document.getElementById('loading-fill');
 const loadingPercent = document.getElementById('loading-percent');
 const chipSprint = document.getElementById('chip-sprint');
 const chipReload = document.getElementById('chip-reload');
+const chipBuy = document.getElementById('chip-buy');
+const upgradeScreen = document.getElementById('upgrade-screen');
+const upgradeOptionsEl = document.getElementById('upgrade-options');
+const lowHealthVignette = document.getElementById('low-health-vignette');
+const weaponNameEl = document.getElementById('weapon-name');
+const weaponOptionsEl = document.getElementById('weapon-options');
+const buyAmmoRoundButton = document.getElementById('buy-ammo-round-button');
+const creditsEl = document.getElementById('credits');
+const armoryWaveEl = document.getElementById('armory-wave');
+const armoryCreditsEl = document.getElementById('armory-credits');
 
 startLoading();
 
@@ -127,6 +277,46 @@ function updateLoadingUI() {
     if (!loadingFill || !loadingPercent) return;
     loadingFill.style.width = `${loadingProgress}%`;
     loadingPercent.textContent = Math.round(loadingProgress);
+}
+
+function addCameraShake(amount) {
+    cameraShake = Math.min(0.25, cameraShake + amount);
+}
+
+function getCameraShakeOffset(delta) {
+    if (cameraShake <= 0) {
+        shakeOffset.set(0, 0, 0);
+        return shakeOffset;
+    }
+    cameraShake = Math.max(0, cameraShake - delta * 2.5);
+    const strength = cameraShake * cameraShake;
+    shakeOffset.set(
+        (Math.random() - 0.5) * strength,
+        (Math.random() - 0.5) * strength,
+        0
+    );
+    return shakeOffset;
+}
+
+function updateTimeScale(delta) {
+    if (timeSlowTimer > 0) {
+        timeSlowTimer -= delta;
+        timeScale = timeSlowIntensity;
+        document.body.classList.add('time-slow');
+        return;
+    }
+    if (timeScale < 1) {
+        timeScale = Math.min(1, timeScale + delta / Config.timeSlowRecovery);
+        if (timeScale >= 1) {
+            document.body.classList.remove('time-slow');
+        }
+    }
+}
+
+function triggerTimeSlow() {
+    timeSlowTimer = timeSlowDuration;
+    timeScale = timeSlowIntensity;
+    document.body.classList.add('time-slow');
 }
 
 // Initialize the Game
@@ -228,6 +418,58 @@ function setupLighting() {
     scene.add(pointLight2);
 }
 
+function addMapObject(mesh) {
+    mapObstacles.push(mesh);
+    scene.add(mesh);
+}
+
+function clearMapObstacles() {
+    mapObstacles.forEach((obj) => {
+        scene.remove(obj);
+        if (obj.geometry) {
+            obj.geometry.dispose();
+        }
+        if (obj.material) {
+            if (Array.isArray(obj.material)) {
+                obj.material.forEach((mat) => mat.dispose());
+            } else {
+                obj.material.dispose();
+            }
+        }
+    });
+    mapObstacles = [];
+}
+
+function regenerateMap() {
+    clearMapObstacles();
+    const layouts = ['lanes', 'ring', 'cross', 'scatter'];
+    let nextLayout = layouts[Math.floor(Math.random() * layouts.length)];
+    if (nextLayout === currentLayout && layouts.length > 1) {
+        const idx = (layouts.indexOf(nextLayout) + 1) % layouts.length;
+        nextLayout = layouts[idx];
+    }
+    currentLayout = nextLayout;
+
+    const density = lowPowerMode ? 0.6 : 1;
+    const castShadow = !lowPowerMode;
+
+    switch (nextLayout) {
+        case 'ring':
+            createLayoutRing(castShadow, density);
+            break;
+        case 'cross':
+            createLayoutCross(castShadow, density);
+            break;
+        case 'scatter':
+            createLayoutScatter(castShadow, density);
+            break;
+        case 'lanes':
+        default:
+            createLayoutLanes(castShadow, density);
+            break;
+    }
+}
+
 // Create Environment - Enhanced
 function createEnvironment() {
     // Ground - grass texture color
@@ -251,9 +493,10 @@ function createEnvironment() {
     const sky = new THREE.Mesh(skyGeometry, skyMaterial);
     scene.add(sky);
     
-    // Create some obstacles/cover - Improved colors
     const density = lowPowerMode ? 0.5 : 1;
-    createObstacles(density);
+
+    // Create some obstacles/cover - Improved colors
+    regenerateMap();
     
     // Add decorative elements
     createTrees(density);
@@ -292,83 +535,130 @@ function createTrees(density = 1) {
     }
 }
 
-// Create Obstacles - Enhanced
-function createObstacles(density = 1) {
-    // Crates - wooden boxes
+function createArenaLanes(castShadow, density) {
+    const laneMaterial = new THREE.MeshStandardMaterial({
+        color: 0x5b646e,
+        roughness: 0.9,
+        metalness: 0.15
+    });
+    const wallGeometry = new THREE.BoxGeometry(8, 1.2, 1);
+    const laneZ = [-24, 0, 24];
+    const laneSpacing = density > 0.8 ? 15 : 20;
+    laneZ.forEach((z, laneIndex) => {
+        for (let x = -30; x <= 30; x += laneSpacing) {
+            if (laneIndex === 1 && Math.abs(x) < 6) continue;
+            const wall = new THREE.Mesh(wallGeometry, laneMaterial);
+            wall.position.set(x, 0.6, z);
+            wall.rotation.y = Math.random() * Math.PI;
+            wall.castShadow = castShadow;
+            wall.receiveShadow = castShadow;
+            addMapObject(wall);
+        }
+    });
+}
+
+function createLayoutLanes(castShadow, density) {
+    createArenaLanes(castShadow, density);
+
     const crateMaterial = new THREE.MeshStandardMaterial({
         color: 0x8B4513,
         roughness: 0.8,
         metalness: 0.1
     });
-    const castShadow = !lowPowerMode;
-    
-    const crateCount = Math.max(6, Math.round(Config.crateCount * density));
+
+    const crateCount = Math.max(4, Math.round(Config.crateCount * density));
     for (let i = 0; i < crateCount; i++) {
-        const size = 1.5 + Math.random() * 1.5;
+        const size = 1.4 + Math.random() * 1.5;
         const geometry = new THREE.BoxGeometry(size, size, size);
         const obstacle = new THREE.Mesh(geometry, crateMaterial);
-        
         obstacle.position.x = (Math.random() - 0.5) * 60;
         obstacle.position.z = (Math.random() - 0.5) * 60;
         obstacle.position.y = size / 2;
-        
         obstacle.rotation.y = Math.random() * Math.PI;
         obstacle.castShadow = castShadow;
         obstacle.receiveShadow = castShadow;
-        
-        obstacle.userData = {
-            isObstacle: true,
-            isCrate: true
-        };
-        
-        scene.add(obstacle);
+        obstacle.userData = { isObstacle: true, isCrate: true };
+        addMapObject(obstacle);
     }
-    
-    // Concrete barriers
+}
+
+function createLayoutRing(castShadow, density) {
     const barrierMaterial = new THREE.MeshStandardMaterial({
         color: 0x808080,
         roughness: 0.9,
         metalness: 0.2
     });
-    
-    const barrierCount = Math.max(4, Math.round(Config.barrierCount * density));
-    for (let i = 0; i < barrierCount; i++) {
-        const geometry = new THREE.BoxGeometry(3, 1.2, 1);
+    const ringCount = Math.max(10, Math.round(18 * density));
+    for (let i = 0; i < ringCount; i++) {
+        const geometry = new THREE.BoxGeometry(4, 1.4, 1.2);
         const barrier = new THREE.Mesh(geometry, barrierMaterial);
-        
-        barrier.position.x = (Math.random() - 0.5) * 70;
-        barrier.position.z = (Math.random() - 0.5) * 70;
-        barrier.position.y = 0.6;
-        
-        barrier.rotation.y = Math.random() * Math.PI;
+        const angle = (i / ringCount) * Math.PI * 2;
+        const radius = 26 + Math.random() * 4;
+        barrier.position.set(Math.cos(angle) * radius, 0.7, Math.sin(angle) * radius);
+        barrier.rotation.y = angle + Math.PI / 2;
         barrier.castShadow = castShadow;
         barrier.receiveShadow = castShadow;
-        
-        scene.add(barrier);
+        addMapObject(barrier);
     }
-    
-    // Pillars
+}
+
+function createLayoutCross(castShadow, density) {
+    const barrierMaterial = new THREE.MeshStandardMaterial({
+        color: 0x6f7680,
+        roughness: 0.85,
+        metalness: 0.2
+    });
+    const thickness = 1.6;
+    const segments = Math.max(3, Math.round(5 * density));
+    for (let i = -segments; i <= segments; i++) {
+        const geometry = new THREE.BoxGeometry(6, 1.6, thickness);
+        const wall = new THREE.Mesh(geometry, barrierMaterial);
+        wall.position.set(i * 6, 0.8, 0);
+        wall.castShadow = castShadow;
+        wall.receiveShadow = castShadow;
+        addMapObject(wall);
+
+        const wall2 = wall.clone();
+        wall2.rotation.y = Math.PI / 2;
+        wall2.position.set(0, 0.8, i * 6);
+        addMapObject(wall2);
+    }
+}
+
+function createLayoutScatter(castShadow, density) {
+    const crateMaterial = new THREE.MeshStandardMaterial({
+        color: 0x7c5b3b,
+        roughness: 0.85,
+        metalness: 0.1
+    });
     const pillarMaterial = new THREE.MeshStandardMaterial({
         color: 0x606060,
         roughness: 0.5,
         metalness: 0.3
     });
-    
-    const pillarCount = Math.max(3, Math.round(Config.pillarCount * density));
+    const crateCount = Math.max(6, Math.round(Config.crateCount * density));
+    const pillarCount = Math.max(4, Math.round(Config.pillarCount * density));
+
+    for (let i = 0; i < crateCount; i++) {
+        const size = 1.4 + Math.random() * 1.6;
+        const geometry = new THREE.BoxGeometry(size, size, size);
+        const obstacle = new THREE.Mesh(geometry, crateMaterial);
+        obstacle.position.set((Math.random() - 0.5) * 70, size / 2, (Math.random() - 0.5) * 70);
+        obstacle.rotation.y = Math.random() * Math.PI;
+        obstacle.castShadow = castShadow;
+        obstacle.receiveShadow = castShadow;
+        addMapObject(obstacle);
+    }
+
     for (let i = 0; i < pillarCount; i++) {
-        const geometry = new THREE.CylinderGeometry(0.8, 1, 6, 12);
+        const geometry = new THREE.CylinderGeometry(0.9, 1.1, 6, 12);
         const pillar = new THREE.Mesh(geometry, pillarMaterial);
-        
-        const angle = (i / pillarCount) * Math.PI * 2;
-        const radius = 25;
-        pillar.position.x = Math.cos(angle) * radius;
-        pillar.position.z = Math.sin(angle) * radius;
-        pillar.position.y = 3;
-        
+        const angle = (i / pillarCount) * Math.PI * 2 + Math.random();
+        const radius = 18 + Math.random() * 18;
+        pillar.position.set(Math.cos(angle) * radius, 3, Math.sin(angle) * radius);
         pillar.castShadow = castShadow;
         pillar.receiveShadow = castShadow;
-        
-        scene.add(pillar);
+        addMapObject(pillar);
     }
 }
 
@@ -387,73 +677,203 @@ function createPlayer() {
 
 // Create Weapon - Enhanced
 function createWeapon() {
-    const gunGroup = new THREE.Group();
-    
-    // Main body - assault rifle style
-    const bodyGeometry = new THREE.BoxGeometry(0.12, 0.18, 0.7);
-    const bodyMaterial = new THREE.MeshStandardMaterial({
-        color: 0x2a2a2a,
-        roughness: 0.3,
-        metalness: 0.8
-    });
-    const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
-    body.position.z = -0.35;
-    gunGroup.add(body);
-    
-    // Barrel
-    const barrelGeometry = new THREE.CylinderGeometry(0.025, 0.035, 0.6, 8);
-    const barrelMaterial = new THREE.MeshStandardMaterial({
-        color: 0x1a1a1a,
-        roughness: 0.2,
-        metalness: 0.9
-    });
-    const barrel = new THREE.Mesh(barrelGeometry, barrelMaterial);
-    barrel.rotation.x = Math.PI / 2;
-    barrel.position.z = -0.8;
-    barrel.position.y = 0.03;
-    gunGroup.add(barrel);
-    
-    // Handle
-    const handleGeometry = new THREE.BoxGeometry(0.1, 0.25, 0.12);
-    const handle = new THREE.Mesh(handleGeometry, bodyMaterial);
-    handle.position.set(0, -0.22, -0.15);
-    handle.rotation.x = 0.3;
-    gunGroup.add(handle);
-    
-    // Magazine
-    const magGeometry = new THREE.BoxGeometry(0.08, 0.2, 0.1);
-    const mag = new THREE.Mesh(magGeometry, bodyMaterial);
-    mag.position.set(0, -0.25, 0);
-    mag.rotation.x = -0.1;
-    gunGroup.add(mag);
-    
-    // Scope
-    const scopeGeometry = new THREE.CylinderGeometry(0.04, 0.04, 0.3, 8);
-    const scopeMaterial = new THREE.MeshStandardMaterial({
-        color: 0x111111,
-        roughness: 0.1,
-        metalness: 0.9
-    });
-    const scope = new THREE.Mesh(scopeGeometry, scopeMaterial);
-    scope.rotation.x = Math.PI / 2;
-    scope.position.set(0, 0.12, -0.3);
-    gunGroup.add(scope);
-    
-    // Position the weapon
-    gunGroup.position.set(0.25, -0.35, -0.4);
-    
-    camera.add(gunGroup);
-    scene.add(camera);
-    
+    initWeaponInventory();
     weapon = {
-        mesh: gunGroup,
+        mesh: null,
         fireRate: Config.weaponFireRate,
         damage: Config.weaponDamage,
         range: Config.weaponRange,
         recoil: 0,
+        recoilBase: 0.06,
+        spread: 0.01,
+        pellets: 1,
+        magSize: Config.maxAmmo,
+        reserveMax: Config.totalAmmo,
+        name: 'VX-9 Rifle',
         isReloading: false,
         canShoot: true
     };
+
+    equipWeapon(currentWeaponId, true);
+    scene.add(camera);
+}
+
+function initWeaponInventory() {
+    weaponInventory = {};
+    WeaponCatalog.forEach((weaponDef) => {
+        weaponInventory[weaponDef.id] = {
+            ammo: weaponDef.magSize,
+            reserve: weaponDef.reserveMax
+        };
+    });
+}
+
+function buildWeaponMesh(weaponDef) {
+    const group = new THREE.Group();
+    const darkMaterial = new THREE.MeshStandardMaterial({
+        color: 0x1e232b,
+        roughness: 0.35,
+        metalness: 0.8
+    });
+    const midMaterial = new THREE.MeshStandardMaterial({
+        color: 0x3a414a,
+        roughness: 0.45,
+        metalness: 0.6
+    });
+    const accentMaterial = new THREE.MeshStandardMaterial({
+        color: 0x8da4b8,
+        roughness: 0.3,
+        metalness: 0.7
+    });
+
+    if (weaponDef.model === 'pistol') {
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.14, 0.32), darkMaterial);
+        body.position.z = -0.2;
+        group.add(body);
+
+        const slide = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.08, 0.24), midMaterial);
+        slide.position.set(0, 0.05, -0.22);
+        group.add(slide);
+
+        const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.2, 8), accentMaterial);
+        barrel.rotation.x = Math.PI / 2;
+        barrel.position.set(0, 0.02, -0.34);
+        barrel.name = 'barrel';
+        group.add(barrel);
+
+        const grip = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.18, 0.1), midMaterial);
+        grip.position.set(0, -0.14, -0.1);
+        grip.rotation.x = 0.25;
+        group.add(grip);
+    } else if (weaponDef.model === 'smg') {
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.16, 0.5), darkMaterial);
+        body.position.z = -0.32;
+        group.add(body);
+
+        const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 0.4, 8), accentMaterial);
+        barrel.rotation.x = Math.PI / 2;
+        barrel.position.set(0, 0.02, -0.62);
+        barrel.name = 'barrel';
+        group.add(barrel);
+
+        const mag = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.18, 0.1), midMaterial);
+        mag.position.set(0, -0.22, -0.2);
+        mag.rotation.x = -0.1;
+        group.add(mag);
+
+        const stock = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.1, 0.2), darkMaterial);
+        stock.position.set(0, 0.03, 0.05);
+        group.add(stock);
+    } else if (weaponDef.model === 'shotgun') {
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.18, 0.55), darkMaterial);
+        body.position.z = -0.25;
+        group.add(body);
+
+        const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.04, 0.7, 10), accentMaterial);
+        barrel.rotation.x = Math.PI / 2;
+        barrel.position.set(0, 0.04, -0.7);
+        barrel.name = 'barrel';
+        group.add(barrel);
+
+        const pump = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, 0.18), midMaterial);
+        pump.position.set(0, -0.03, -0.55);
+        group.add(pump);
+
+        const stock = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.12, 0.25), darkMaterial);
+        stock.position.set(0, 0.03, 0.1);
+        group.add(stock);
+    } else {
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.18, 0.7), darkMaterial);
+        body.position.z = -0.35;
+        group.add(body);
+
+        const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.035, 0.6, 8), accentMaterial);
+        barrel.rotation.x = Math.PI / 2;
+        barrel.position.set(0, 0.03, -0.8);
+        barrel.name = 'barrel';
+        group.add(barrel);
+
+        const mag = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.2, 0.1), midMaterial);
+        mag.position.set(0, -0.25, -0.05);
+        mag.rotation.x = -0.1;
+        group.add(mag);
+
+        const scope = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.3, 8), accentMaterial);
+        scope.rotation.x = Math.PI / 2;
+        scope.position.set(0, 0.12, -0.3);
+        group.add(scope);
+    }
+
+    group.position.set(0.25, -0.35, -0.4);
+    return group;
+}
+
+function equipWeapon(weaponId, isInitial = false) {
+    const weaponDef = WeaponCatalog.find((item) => item.id === weaponId);
+    if (!weaponDef) return;
+
+    syncWeaponInventory();
+
+    if (weapon && weapon.mesh) {
+        camera.remove(weapon.mesh);
+    }
+
+    const mesh = buildWeaponMesh(weaponDef);
+    camera.add(mesh);
+
+    weapon.mesh = mesh;
+    weapon.fireRate = weaponDef.fireRate;
+    weapon.damage = weaponDef.damage;
+    weapon.range = weaponDef.range;
+    weapon.recoilBase = weaponDef.recoil;
+    weapon.spread = weaponDef.spread;
+    weapon.pellets = weaponDef.pellets;
+    const adjustedMag = Math.max(6, Math.round(weaponDef.magSize * magSizeMultiplier));
+    const adjustedReserve = Math.max(adjustedMag * 3, Math.round(weaponDef.reserveMax * magSizeMultiplier));
+    weapon.magSize = adjustedMag;
+    weapon.reserveMax = adjustedReserve;
+    weapon.name = weaponDef.name;
+    weapon.canShoot = true;
+    weapon.isReloading = false;
+    currentWeaponId = weaponDef.id;
+
+    if (!weaponInventory[currentWeaponId]) {
+        weaponInventory[currentWeaponId] = {
+            ammo: weaponDef.magSize,
+            reserve: weaponDef.reserveMax
+        };
+    }
+
+    maxAmmo = adjustedMag;
+    const storedAmmo = weaponInventory[currentWeaponId].ammo;
+    const storedReserve = weaponInventory[currentWeaponId].reserve;
+    ammo = Math.min(storedAmmo, adjustedMag);
+    reserveAmmo = Math.min(storedReserve, adjustedReserve);
+    syncWeaponInventory();
+
+    if (reloadIndicator) {
+        reloadIndicator.classList.add('hidden');
+    }
+    if (reloadFill) {
+        reloadFill.style.width = '0%';
+        reloadFill.style.background = 'linear-gradient(90deg, #f6c64f, #ff9248)';
+    }
+
+    if (!isInitial) {
+        showPrompt(`Equipped ${weaponDef.name}`, 1400);
+    }
+    updateHUD();
+}
+
+function syncWeaponInventory() {
+    if (!currentWeaponId || !weaponInventory[currentWeaponId]) return;
+    weaponInventory[currentWeaponId].ammo = ammo;
+    weaponInventory[currentWeaponId].reserve = reserveAmmo;
+}
+
+function refreshWeaponStats() {
+    if (!weapon || !currentWeaponId) return;
+    equipWeapon(currentWeaponId, true);
 }
 
 // Setup Controls - Fixed
@@ -528,6 +948,29 @@ function onKeyDown(event) {
         case 'ShiftRight': keys.shift = true; break;
         case 'KeyR': reload(); break;
         case 'KeyE': interact(); break;
+        case 'KeyB':
+            if (gameState === GameState.PLAYING) {
+                buyAmmo(100, 'mid');
+            }
+            break;
+        case 'Digit1':
+        case 'Numpad1':
+            if (gameState === GameState.CHOOSING) {
+                selectUpgrade(0);
+            }
+            break;
+        case 'Digit2':
+        case 'Numpad2':
+            if (gameState === GameState.CHOOSING) {
+                selectUpgrade(1);
+            }
+            break;
+        case 'Digit3':
+        case 'Numpad3':
+            if (gameState === GameState.CHOOSING) {
+                selectUpgrade(2);
+            }
+            break;
         case 'Equal':
         case 'NumpadAdd':
             adjustUiScale(Config.uiScaleStep);
@@ -593,6 +1036,10 @@ function adjustUiScale(delta) {
 // Mouse Down Handler - Fixed
 function onMouseDown(event) {
     if (event.button === 0 && gameState === GameState.PLAYING && isPointerLocked) {
+        if (weapon.isReloading) {
+            cancelReload();
+            return;
+        }
         shoot();
     }
 }
@@ -608,16 +1055,18 @@ function shoot() {
     
     weapon.canShoot = false;
     ammo--;
+    syncWeaponInventory();
     updateHUD();
     
     // Play sound
     playShootSound();
+    addCameraShake(0.02);
     
     // Muzzle flash
     showMuzzleFlash();
     
     // Apply recoil
-    weapon.recoil = 0.08;
+    weapon.recoil = weapon.recoilBase;
     player.pitch += weapon.recoil;
     
     // Create bullet tracer
@@ -625,33 +1074,45 @@ function shoot() {
     
     // Raycast for hits - improved
     const raycaster = new THREE.Raycaster();
-    raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
-    
-    // Check all enemies
+    const pellets = weapon.pellets || 1;
     let hitEnemy = false;
-    for (let i = enemies.length - 1; i >= 0; i--) {
-        const enemy = enemies[i];
-        const intersects = raycaster.intersectObject(enemy.mesh, true);
-        
-        if (intersects.length > 0) {
-            const hit = intersects[0];
-            if (hit.distance <= weapon.range) {
-                enemy.health -= weapon.damage;
-                showHitMarker();
-                
-                // Flash enemy red
-                flashEnemy(enemy.mesh);
-                
-                // Create hit effect
-                createHitEffect(hit.point);
-                
-                if (enemy.health <= 0) {
-                    killEnemy(i);
+
+    for (let p = 0; p < pellets; p++) {
+        const spreadX = (Math.random() - 0.5) * weapon.spread;
+        const spreadY = (Math.random() - 0.5) * weapon.spread;
+        raycaster.setFromCamera(new THREE.Vector2(spreadX, spreadY), camera);
+
+        let closestHit = null;
+        let closestEnemyIndex = -1;
+
+        for (let i = enemies.length - 1; i >= 0; i--) {
+            const enemy = enemies[i];
+            const intersects = raycaster.intersectObject(enemy.mesh, true);
+            if (intersects.length > 0) {
+                const hit = intersects[0];
+                if (hit.distance <= weapon.range && (!closestHit || hit.distance < closestHit.distance)) {
+                    closestHit = hit;
+                    closestEnemyIndex = i;
                 }
-                hitEnemy = true;
-                break;
             }
         }
+
+        if (closestHit && closestEnemyIndex >= 0) {
+            const enemy = enemies[closestEnemyIndex];
+            const damage = weapon.damage * damageMultiplier;
+            enemy.health -= damage;
+            showHitMarker();
+            flashEnemy(enemy.mesh);
+            createHitEffect(closestHit.point);
+            if (enemy.health <= 0) {
+                killEnemy(closestEnemyIndex);
+            }
+            hitEnemy = true;
+        }
+    }
+    if (hitEnemy) {
+        playUiSound('hit');
+        addCameraShake(0.01);
     }
     
     // Reset fire rate
@@ -664,6 +1125,12 @@ function shoot() {
 function flashEnemy(enemyMesh) {
     enemyMesh.traverse((child) => {
         if (child.isMesh) {
+            if (!child.userData.baseEmissive) {
+                child.userData.baseEmissive = child.material.emissive
+                    ? child.material.emissive.clone()
+                    : new THREE.Color(0x000000);
+                child.userData.baseEmissiveIntensity = child.material.emissiveIntensity || 0;
+            }
             child.material.emissive = new THREE.Color(0xff0000);
             child.material.emissiveIntensity = 0.5;
         }
@@ -672,8 +1139,9 @@ function flashEnemy(enemyMesh) {
     setTimeout(() => {
         enemyMesh.traverse((child) => {
             if (child.isMesh) {
-                child.material.emissive = new THREE.Color(0x000000);
-                child.material.emissiveIntensity = 0;
+                const baseEmissive = child.userData.baseEmissive || new THREE.Color(0x000000);
+                child.material.emissive = baseEmissive.clone();
+                child.material.emissiveIntensity = child.userData.baseEmissiveIntensity || 0;
             }
         });
     }, 100);
@@ -709,52 +1177,121 @@ function createBulletTracer() {
 // Reload Function
 function reload() {
     if (gameState !== GameState.PLAYING) return;
-    if (weapon.isReloading || ammo >= Config.maxAmmo || reserveAmmo <= 0) return;
-    
+    if (weapon.isReloading) {
+        attemptPerfectReload();
+        return;
+    }
+    if (ammo >= maxAmmo || reserveAmmo <= 0) return;
+
     weapon.isReloading = true;
     reloadStartTime = performance.now();
+    reloadDurationCurrent = Config.reloadDuration * reloadSpeedMultiplier;
+    const isSprinting = keys.shift && player.velocity.length() > 0;
+    if (isSprinting) {
+        reloadDurationCurrent *= Config.reloadSprintMultiplier;
+    }
+
+    ammo = 0;
     playUiSound('reload');
-    
+    syncWeaponInventory();
+    updateHUD();
+
     // Show reload indicator
     if (reloadIndicator) {
         reloadIndicator.classList.remove('hidden');
     }
     if (reloadFill) {
         reloadFill.style.width = '0%';
+        reloadFill.style.background = 'linear-gradient(90deg, #f6c64f, #ff9248)';
     }
     if (chipReload) {
         chipReload.classList.add('active');
     }
-    
+
     // Animate weapon
     weapon.mesh.rotation.x = 0.8;
     weapon.mesh.position.z = -0.2;
     
     setTimeout(() => {
-        const needed = Config.maxAmmo - ammo;
-        const loaded = Math.min(needed, reserveAmmo);
-        ammo += loaded;
-        reserveAmmo -= loaded;
-        
-        weapon.isReloading = false;
-        weapon.mesh.rotation.x = 0;
-        weapon.mesh.position.z = -0.4;
-        
-        if (reloadIndicator) {
-            reloadIndicator.classList.add('hidden');
-        }
-        if (chipReload) {
-            chipReload.classList.remove('active');
-        }
-        
-        updateHUD();
-    }, Config.reloadDuration);
+        if (!weapon.isReloading) return;
+        finishReload(false);
+    }, reloadDurationCurrent);
+}
+
+function finishReload(isPerfect) {
+    const needed = maxAmmo - ammo;
+    const loaded = Math.min(needed, reserveAmmo);
+    ammo += loaded;
+    reserveAmmo -= loaded;
+
+    if (isPerfect && reserveAmmo > 0) {
+        const bonus = Math.min(Config.perfectReloadBonus, reserveAmmo);
+        ammo = Math.min(maxAmmo, ammo + bonus);
+        reserveAmmo -= bonus;
+        showPrompt('Perfect reload!', 1200);
+        playUiSound('perfect');
+    }
+
+    weapon.isReloading = false;
+    weapon.mesh.rotation.x = 0;
+    weapon.mesh.position.z = -0.4;
+
+    if (reloadIndicator) {
+        reloadIndicator.classList.add('hidden');
+    }
+    if (chipReload) {
+        chipReload.classList.remove('active');
+    }
+    if (reloadFill) {
+        reloadFill.style.background = 'linear-gradient(90deg, #f6c64f, #ff9248)';
+    }
+
+    syncWeaponInventory();
+    updateHUD();
+}
+
+function attemptPerfectReload() {
+    if (!weapon.isReloading) return;
+    const progress = (performance.now() - reloadStartTime) / reloadDurationCurrent;
+    if (progress >= 1 - Config.perfectReloadWindow) {
+        finishReload(true);
+    } else {
+        cancelReload();
+    }
+}
+
+function cancelReload() {
+    if (!weapon.isReloading) return;
+    weapon.isReloading = false;
+    weapon.mesh.rotation.x = 0;
+    weapon.mesh.position.z = -0.4;
+
+    if (reloadIndicator) {
+        reloadIndicator.classList.add('hidden');
+    }
+    if (reloadFill) {
+        reloadFill.style.width = '0%';
+        reloadFill.style.background = 'linear-gradient(90deg, #f6c64f, #ff9248)';
+    }
+    if (chipReload) {
+        chipReload.classList.remove('active');
+    }
+
+    showPrompt('Reload canceled', 1000);
+    syncWeaponInventory();
+    updateHUD();
 }
 
 function updateReloadIndicator() {
     if (!weapon || !weapon.isReloading || !reloadFill) return;
-    const progress = (performance.now() - reloadStartTime) / Config.reloadDuration;
-    reloadFill.style.width = `${Math.min(100, Math.max(0, progress * 100))}%`;
+    const progress = (performance.now() - reloadStartTime) / reloadDurationCurrent;
+    const clamped = Math.min(1, Math.max(0, progress));
+    reloadFill.style.width = `${clamped * 100}%`;
+    if (clamped >= 1 - Config.perfectReloadWindow) {
+        reloadFill.style.background = 'linear-gradient(90deg, #f6c64f, #2bd4c9)';
+    } else {
+        reloadFill.style.background = 'linear-gradient(90deg, #f6c64f, #ff9248)';
+    }
 }
 
 // Create Hit Effect
@@ -802,8 +1339,8 @@ function showMuzzleFlash() {
     }
     
     // Also flash the barrel
-    const barrel = weapon.mesh.children[1];
-    if (barrel) {
+    const barrel = weapon.mesh.getObjectByName('barrel');
+    if (barrel && barrel.material) {
         barrel.material.emissive = new THREE.Color(0xffaa00);
         barrel.material.emissiveIntensity = 2;
         setTimeout(() => {
@@ -907,10 +1444,25 @@ function playUiSound(type) {
                 duration = 0.12;
                 volume = 0.07;
                 break;
+            case 'perfect':
+                frequency = 620;
+                duration = 0.12;
+                volume = 0.1;
+                break;
             case 'damage':
                 frequency = 120;
                 duration = 0.16;
                 volume = 0.12;
+                break;
+            case 'hit':
+                frequency = 420;
+                duration = 0.06;
+                volume = 0.06;
+                break;
+            case 'kill':
+                frequency = 320;
+                duration = 0.14;
+                volume = 0.09;
                 break;
         }
 
@@ -938,33 +1490,67 @@ function spawnEnemy() {
     }
     
     try {
-        // Create a simple enemy with light variety
+        // Enemy roles with tactical behavior
         const enemyTypes = [
-            { color: 0xff5d4d, speed: 0.055, health: 90 },
-            { color: 0xffb84d, speed: 0.07, health: 70 },
-            { color: 0x7cff7a, speed: 0.045, health: 120 }
+            {
+                role: 'fast',
+                color: 0xff5d4d,
+                speed: 0.075,
+                health: 70
+            },
+            {
+                role: 'tank',
+                color: 0xffb84d,
+                speed: 0.045,
+                health: 150
+            },
+            {
+                role: 'flanker',
+                color: 0x7ac9ff,
+                speed: 0.06,
+                health: 90,
+                preferredRange: 7
+            },
+            {
+                role: 'exploder',
+                color: 0x7cff7a,
+                speed: 0.055,
+                health: 85
+            }
         ];
-        const baseType = enemyTypes[Math.floor(Math.random() * enemyTypes.length)];
-        const healthBoost = Math.min(60, wave * 6);
-        const speedBoost = Math.min(0.03, wave * 0.002);
 
-        const geometry = new THREE.BoxGeometry(2, 3, 2);
-        const material = new THREE.MeshStandardMaterial({ color: baseType.color });
-        const enemy = new THREE.Mesh(geometry, material);
+        const roll = Math.random();
+        let baseType = enemyTypes[0];
+        if (wave >= 2) {
+            if (roll < 0.45) baseType = enemyTypes[0];
+            else if (roll < 0.7) baseType = enemyTypes[1];
+            else if (roll < 0.9) baseType = enemyTypes[2];
+            else baseType = enemyTypes[3];
+        }
+
+        const healthBoost = Math.min(70, wave * 6);
+        const speedBoost = Math.min(0.035, wave * 0.002);
+
+        const enemy = createEnemyModel(baseType.role, baseType.color);
         
         // Position around the player
         const angle = Math.random() * Math.PI * 2;
         const radius = 25 + Math.random() * 30;
         enemy.position.x = camera.position.x + Math.cos(angle) * radius;
         enemy.position.z = camera.position.z + Math.sin(angle) * radius;
-        enemy.position.y = 1.5;
+        enemy.position.y = baseType.role === 'tank' ? 0.35 : 0.2;
+        enemy.castShadow = !lowPowerMode;
+        enemy.receiveShadow = !lowPowerMode;
         
         scene.add(enemy);
         enemies.push({
             mesh: enemy,
             health: baseType.health + healthBoost,
             speed: baseType.speed + speedBoost,
-            lastAttack: 0
+            lastAttack: 0,
+            role: baseType.role,
+            preferredRange: baseType.preferredRange || 0,
+            orbitDir: Math.random() < 0.5 ? -1 : 1
         });
         updateHUD();
         
@@ -975,11 +1561,85 @@ function spawnEnemy() {
     }
 }
 
+function createEnemyModel(role, color) {
+    const group = new THREE.Group();
+    const scale = role === 'tank' ? 1.25 : role === 'fast' ? 0.9 : 1;
+    const bodyMaterial = new THREE.MeshStandardMaterial({
+        color,
+        roughness: 0.6,
+        metalness: 0.2
+    });
+    const darkMaterial = new THREE.MeshStandardMaterial({
+        color: 0x2b2b2b,
+        roughness: 0.8,
+        metalness: 0.1
+    });
+
+    const torso = new THREE.Mesh(new THREE.BoxGeometry(1.4 * scale, 1.8 * scale, 0.8 * scale), bodyMaterial);
+    torso.position.y = 1.4 * scale;
+    group.add(torso);
+
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.45 * scale, 10, 10), bodyMaterial);
+    head.position.y = 2.6 * scale;
+    group.add(head);
+
+    const armGeometry = new THREE.BoxGeometry(0.35 * scale, 1.2 * scale, 0.35 * scale);
+    const leftArm = new THREE.Mesh(armGeometry, darkMaterial);
+    leftArm.position.set(-0.9 * scale, 1.4 * scale, 0);
+    group.add(leftArm);
+
+    const rightArm = new THREE.Mesh(armGeometry, darkMaterial);
+    rightArm.position.set(0.9 * scale, 1.4 * scale, 0);
+    group.add(rightArm);
+
+    const legGeometry = new THREE.BoxGeometry(0.4 * scale, 1.2 * scale, 0.4 * scale);
+    const leftLeg = new THREE.Mesh(legGeometry, darkMaterial);
+    leftLeg.position.set(-0.4 * scale, 0.4 * scale, 0);
+    group.add(leftLeg);
+
+    const rightLeg = new THREE.Mesh(legGeometry, darkMaterial);
+    rightLeg.position.set(0.4 * scale, 0.4 * scale, 0);
+    group.add(rightLeg);
+
+    if (role === 'tank') {
+        const shoulder = new THREE.Mesh(new THREE.BoxGeometry(1.8 * scale, 0.5 * scale, 1.0 * scale), bodyMaterial);
+        shoulder.position.y = 2.0 * scale;
+        group.add(shoulder);
+    }
+
+    if (role === 'exploder') {
+        const coreMaterial = new THREE.MeshStandardMaterial({
+            color: 0x7cff7a,
+            emissive: 0x55ff66,
+            emissiveIntensity: 0.9,
+            roughness: 0.4,
+            metalness: 0.1
+        });
+        const core = new THREE.Mesh(new THREE.SphereGeometry(0.4 * scale, 10, 10), coreMaterial);
+        core.position.set(0, 1.4 * scale, 0.55 * scale);
+        group.add(core);
+    }
+
+    group.traverse((child) => {
+        if (child.isMesh) {
+            child.castShadow = !lowPowerMode;
+            child.receiveShadow = !lowPowerMode;
+        }
+    });
+
+    return group;
+}
+
 function killEnemy(index) {
     if (index < 0 || index >= enemies.length) return;
     
     const enemy = enemies[index];
     
+    if (enemy.role === 'exploder') {
+        explodeEnemy(index, true);
+        return;
+    }
+
     // Death effect
     createDeathEffect(enemy.mesh.position);
     
@@ -988,6 +1648,8 @@ function killEnemy(index) {
     
     score += 100;
     updateHUD();
+    playUiSound('kill');
+    triggerTimeSlow();
     
     // Check wave completion
     if (enemies.length === 0) {
@@ -995,15 +1657,45 @@ function killEnemy(index) {
         updateHUD();
         setTimeout(() => {
             if (gameState === GameState.PLAYING) {
-                startWave();
+                openUpgradeScreen();
             }
-        }, 2000);
+        }, 1200);
+    }
+}
+
+function explodeEnemy(index, fromKill = false) {
+    if (index < 0 || index >= enemies.length) return;
+    const enemy = enemies[index];
+    const position = enemy.mesh.position.clone();
+    createExplosionEffect(position);
+    scene.remove(enemy.mesh);
+    enemies.splice(index, 1);
+
+    const distance = camera.position.distanceTo(position);
+    if (distance < 6) {
+        const intensity = Math.max(0.4, 1 - distance / 6);
+        takeDamage(Math.round(Config.enemyDamage * 2 * intensity), position);
+    }
+
+    score += fromKill ? 120 : 80;
+    updateHUD();
+    playUiSound('kill');
+    triggerTimeSlow();
+
+    if (enemies.length === 0) {
+        wave++;
+        updateHUD();
+        setTimeout(() => {
+            if (gameState === GameState.PLAYING) {
+                openUpgradeScreen();
+            }
+        }, 1200);
     }
 }
 
 // Create Death Effect
 function createDeathEffect(position) {
-    const particleCount = lowPowerMode ? 10 : 20;
+    const particleCount = lowPowerMode ? 10 : 22;
     for (let i = 0; i < particleCount; i++) {
         const geometry = new THREE.SphereGeometry(0.1, 4, 4);
         const material = new THREE.MeshBasicMaterial({
@@ -1023,8 +1715,8 @@ function createDeathEffect(position) {
         
         particle.userData = {
             velocity: velocity,
-            lifetime: 1.0,
-            maxLifetime: 1.0
+            lifetime: 1.3,
+            maxLifetime: 1.3
         };
         
         scene.add(particle);
@@ -1035,6 +1727,15 @@ function createDeathEffect(position) {
 }
 
 function startWave() {
+    if (upgradeScreen) {
+        upgradeScreen.classList.add('hidden');
+    }
+    hud.classList.remove('hidden');
+    if (gameState === GameState.CHOOSING) {
+        gameState = GameState.PLAYING;
+    }
+    if (gameState !== GameState.PLAYING) return;
+    regenerateMap();
     // Spawn enemies quickly
     const enemyCount = 3 + wave * 2;  // More enemies at start!
     for (let i = 0; i < enemyCount; i++) {
@@ -1047,32 +1748,50 @@ function startWave() {
 // Update Enemies - Fixed
 function updateEnemies(delta) {
     const now = Date.now();
-    
-    for (let i = 0; i < enemies.length; i++) {
+
+    for (let i = enemies.length - 1; i >= 0; i--) {
         const enemy = enemies[i];
-        
+
         // Calculate direction to player
         const direction = new THREE.Vector3();
         direction.subVectors(camera.position, enemy.mesh.position);
         direction.y = 0;
         const distance = direction.length();
         direction.normalize();
-        
-        // Move towards player if far enough
-        if (distance > 2) {
-            const step = enemy.speed * (delta * 60);
-            enemy.mesh.position.addScaledVector(direction, step);
+
+        const step = enemy.speed * (delta * 60);
+
+        if (enemy.role === 'flanker') {
+            const preferred = enemy.preferredRange || 7;
+            if (distance > preferred + 1) {
+                enemy.mesh.position.addScaledVector(direction, step);
+            } else {
+                const tangent = new THREE.Vector3(-direction.z, 0, direction.x)
+                    .multiplyScalar(enemy.orbitDir);
+                const drift = direction.clone().multiplyScalar(0.35);
+                const move = tangent.add(drift).normalize();
+                enemy.mesh.position.addScaledVector(move, step);
+            }
+        } else {
+            if (distance > 2) {
+                enemy.mesh.position.addScaledVector(direction, step);
+            }
         }
-        
+
         // Look at player
         enemy.mesh.lookAt(camera.position.x, 1, camera.position.z);
-        
+
+        if (enemy.role === 'exploder' && distance < 2.8) {
+            explodeEnemy(i);
+            continue;
+        }
+
         // Attack player if close
         if (distance < 2.5) {
             if (now - enemy.lastAttack > 1000) {
                 takeDamage(Config.enemyDamage, enemy.mesh.position);
                 enemy.lastAttack = now;
-                
+
                 // Push enemy back slightly
                 enemy.mesh.position.subScaledVector(direction, 1);
             }
@@ -1080,12 +1799,46 @@ function updateEnemies(delta) {
     }
 }
 
+function createExplosionEffect(position) {
+    const particleCount = lowPowerMode ? 16 : 32;
+    for (let i = 0; i < particleCount; i++) {
+        const geometry = new THREE.SphereGeometry(0.12, 4, 4);
+        const material = new THREE.MeshBasicMaterial({
+            color: 0xffb347,
+            transparent: true
+        });
+        const particle = new THREE.Mesh(geometry, material);
+        particle.position.copy(position);
+        particle.position.y += 1;
+
+        const velocity = new THREE.Vector3(
+            (Math.random() - 0.5) * 6,
+            Math.random() * 4,
+            (Math.random() - 0.5) * 6
+        );
+
+        particle.userData = {
+            velocity: velocity,
+            lifetime: 1.1,
+            maxLifetime: 1.1
+        };
+
+        scene.add(particle);
+
+        if (!window.hitParticles) window.hitParticles = [];
+        window.hitParticles.push(particle);
+    }
+
+    addCameraShake(0.12);
+}
+
 // Take Damage - Fixed
 function takeDamage(amount, sourcePosition) {
-    health -= amount;
+    health = Math.max(0, health - amount);
     updateHUD();
     playUiSound('damage');
     showDamageDirection(sourcePosition);
+    addCameraShake(0.08);
     
     // Show damage overlay
     let overlay = document.getElementById('damage-overlay');
@@ -1103,13 +1856,12 @@ function takeDamage(amount, sourcePosition) {
     }, 300);
     
     // Screen shake effect
-    camera.position.y += 0.05;
+    camera.position.y -= 0.04;
     setTimeout(() => {
         camera.position.y = Config.playerHeight;
     }, 50);
     
     if (health <= 0) {
-        health = 0;
         updateHUD();
         gameOver();
     }
@@ -1149,6 +1901,7 @@ function setupUI() {
     }
 
     setupButtonAudio();
+    setupArmoryUI();
     let storedScale = 1;
     try {
         const saved = parseFloat(localStorage.getItem('uiScale'));
@@ -1160,6 +1913,9 @@ function setupUI() {
     }
     setUiScale(storedScale);
     updateHUD();
+    if (upgradeScreen) {
+        upgradeScreen.classList.add('hidden');
+    }
     if (startButton) {
         startButton.focus();
     }
@@ -1170,6 +1926,199 @@ function setupButtonAudio() {
         button.addEventListener('pointerenter', () => playUiSound('hover'));
         button.addEventListener('click', () => playUiSound('click'));
     });
+}
+
+function setupArmoryUI() {
+    if (buyAmmoRoundButton) {
+        buyAmmoRoundButton.addEventListener('click', () => buyAmmo(50, 'armory'));
+    }
+}
+
+function renderWeaponOptions() {
+    if (!weaponOptionsEl) return;
+    weaponOptionsEl.innerHTML = '';
+    WeaponCatalog.forEach((weaponDef) => {
+        const button = document.createElement('button');
+        button.className = 'weapon-option';
+        if (weaponDef.id === currentWeaponId) {
+            button.classList.add('active');
+        }
+        button.type = 'button';
+        button.innerHTML = `
+            <div class="weapon-name-label">${weaponDef.name}</div>
+            <div class="weapon-stat">${weaponDef.type.toUpperCase()} | DMG ${weaponDef.damage}</div>
+            <div class="weapon-stat">Mag ${weaponDef.magSize} | RPM ${Math.round(60000 / weaponDef.fireRate)}</div>
+        `;
+        button.addEventListener('click', () => {
+            equipWeapon(weaponDef.id);
+            renderWeaponOptions();
+        });
+        button.addEventListener('pointerenter', () => playUiSound('hover'));
+        button.addEventListener('click', () => playUiSound('click'));
+        weaponOptionsEl.appendChild(button);
+    });
+}
+
+function updateCredits() {
+    if (creditsEl) {
+        creditsEl.textContent = score;
+    }
+    if (armoryCreditsEl) {
+        armoryCreditsEl.textContent = score;
+    }
+}
+
+function buyAmmo(cost, source) {
+    if (!weapon) return;
+    if (score < cost) {
+        showPrompt('Not enough credits', 1200);
+        return;
+    }
+    if (reserveAmmo >= weapon.reserveMax) {
+        showPrompt('Ammo already full', 1200);
+        return;
+    }
+    score -= cost;
+    reserveAmmo = Math.min(weapon.reserveMax, reserveAmmo + maxAmmo);
+    syncWeaponInventory();
+    updateHUD();
+    showPrompt(source === 'armory' ? 'Ammo purchased' : 'Ammo purchased mid-wave', 1200);
+}
+
+function openUpgradeScreen() {
+    if (!upgradeScreen || !upgradeOptionsEl) return;
+    if (gameState !== GameState.PLAYING) return;
+    gameState = GameState.CHOOSING;
+    document.exitPointerLock();
+    clearPrompts();
+    hud.classList.add('hidden');
+    timeScale = 1;
+    timeSlowTimer = 0;
+    document.body.classList.remove('time-slow');
+    upgradeOptions = generateUpgradeOptions();
+    upgradeOptionsEl.innerHTML = '';
+
+    upgradeOptions.forEach((option, index) => {
+        const button = document.createElement('button');
+        button.className = 'upgrade-option';
+        button.type = 'button';
+        button.dataset.index = index.toString();
+        button.innerHTML = `
+            <div class="upgrade-title">${option.title}</div>
+            <div class="upgrade-desc">${option.description}</div>
+            <div class="upgrade-tradeoff">${option.tradeoff}</div>
+        `;
+        button.addEventListener('click', () => selectUpgrade(index));
+        button.addEventListener('pointerenter', () => playUiSound('hover'));
+        button.addEventListener('click', () => playUiSound('click'));
+        upgradeOptionsEl.appendChild(button);
+    });
+
+    upgradeScreen.classList.remove('hidden');
+    renderWeaponOptions();
+    updateCredits();
+    if (armoryWaveEl) {
+        armoryWaveEl.textContent = wave;
+    }
+    if (armoryCreditsEl) {
+        armoryCreditsEl.textContent = score;
+    }
+    const firstButton = upgradeOptionsEl.querySelector('button');
+    if (firstButton) firstButton.focus();
+}
+
+function closeUpgradeScreen() {
+    if (!upgradeScreen) return;
+    upgradeScreen.classList.add('hidden');
+}
+
+function generateUpgradeOptions() {
+    const pool = [
+        {
+            title: 'Overclocked Rounds',
+            description: '+20% weapon damage.',
+            tradeoff: '-10% max health',
+            apply: () => {
+                damageMultiplier *= 1.2;
+                maxHealth = Math.max(60, Math.round(maxHealth * 0.9));
+                health = Math.min(health, maxHealth);
+            }
+        },
+        {
+            title: 'Reinforced Armor',
+            description: '+20 max health.',
+            tradeoff: '-8% move speed',
+            apply: () => {
+                maxHealth += 20;
+                health = Math.min(maxHealth, health + 20);
+                moveSpeedMultiplier *= 0.92;
+            }
+        },
+        {
+            title: 'Rapid Reload',
+            description: 'Reload 20% faster.',
+            tradeoff: '-10% max ammo',
+            apply: () => {
+                reloadSpeedMultiplier *= 0.8;
+                magSizeMultiplier *= 0.9;
+            }
+        },
+        {
+            title: 'Extended Mag',
+            description: '+20% max ammo.',
+            tradeoff: '-10% damage',
+            apply: () => {
+                magSizeMultiplier *= 1.2;
+                damageMultiplier *= 0.9;
+            }
+        },
+        {
+            title: 'Adrenal Surge',
+            description: '+12% move speed.',
+            tradeoff: '-10 max health',
+            apply: () => {
+                moveSpeedMultiplier *= 1.12;
+                maxHealth = Math.max(60, maxHealth - 10);
+                health = Math.min(health, maxHealth);
+            }
+        },
+        {
+            title: 'Chrono Spike',
+            description: 'Longer time-slow on kill.',
+            tradeoff: 'Slightly slower reload',
+            apply: () => {
+                timeSlowDuration = Math.min(0.6, timeSlowDuration + 0.15);
+                reloadSpeedMultiplier *= 1.08;
+            }
+        }
+    ];
+
+    const options = [];
+    const used = new Set();
+    while (options.length < 3 && used.size < pool.length) {
+        const index = Math.floor(Math.random() * pool.length);
+        if (used.has(index)) continue;
+        used.add(index);
+        options.push(pool[index]);
+    }
+    return options;
+}
+
+function selectUpgrade(index) {
+    if (gameState !== GameState.CHOOSING) return;
+    const option = upgradeOptions[index];
+    if (!option) return;
+    option.apply();
+    refreshWeaponStats();
+    closeUpgradeScreen();
+    updateHUD();
+    gameState = GameState.PLAYING;
+    hud.classList.remove('hidden');
+    startWave();
+    gameCanvas.requestPointerLock();
+    gameCanvas.focus();
+    clock.start();
+    animate();
 }
 
 // Update HUD
@@ -1183,12 +2132,13 @@ function updateHUD() {
     const waveEl = document.getElementById('wave');
     const ammoBar = document.getElementById('ammo-bar');
     
+    const healthPercent = maxHealth > 0 ? (health / maxHealth) * 100 : 0;
     if (healthBar) {
-        healthBar.style.width = `${Math.max(0, health)}%`;
+        healthBar.style.width = `${Math.max(0, Math.min(100, healthPercent))}%`;
         // Change color based on health
-        if (health > 60) {
+        if (healthPercent > 60) {
             healthBar.style.background = 'linear-gradient(90deg, #4ecdc4, #44a08d)';
-        } else if (health > 30) {
+        } else if (healthPercent > 30) {
             healthBar.style.background = 'linear-gradient(90deg, #ffd93d, #ff9500)';
         } else {
             healthBar.style.background = 'linear-gradient(90deg, #ff4444, #cc0000)';
@@ -1196,26 +2146,42 @@ function updateHUD() {
     }
     if (healthContainer) {
         healthContainer.setAttribute('aria-valuenow', Math.max(0, Math.round(health)));
+        healthContainer.setAttribute('aria-valuemax', Math.round(maxHealth));
     }
     
     if (healthText) healthText.textContent = Math.max(0, Math.round(health));
     if (currentAmmoEl) {
         currentAmmoEl.textContent = ammo;
-        currentAmmoEl.style.color = ammo <= Config.lowAmmoThreshold ? '#ff4d5a' : '#2bd4c9';
+        currentAmmoEl.style.color = ammo <= getLowAmmoThreshold() ? '#ff4d5a' : '#2bd4c9';
     }
     if (totalAmmoEl) totalAmmoEl.textContent = reserveAmmo;
     if (scoreEl) scoreEl.textContent = score;
     if (waveEl) waveEl.textContent = wave;
     if (enemyCountEl) enemyCountEl.textContent = enemies.length;
+    if (weaponNameEl && weapon) {
+        weaponNameEl.textContent = weapon.name;
+    }
+    updateCredits();
     if (ammoFill) {
-        const ammoPercent = (ammo / Config.maxAmmo) * 100;
+        const ammoPercent = maxAmmo > 0 ? (ammo / maxAmmo) * 100 : 0;
         ammoFill.style.width = `${Math.max(0, Math.min(100, ammoPercent))}%`;
     }
     if (ammoBar) {
-        ammoBar.setAttribute('aria-valuenow', Math.max(0, Math.round((ammo / Config.maxAmmo) * 100)));
+        ammoBar.setAttribute('aria-valuenow', Math.max(0, Math.round((ammo / maxAmmo) * 100)));
+        ammoBar.setAttribute('aria-valuemax', 100);
+    }
+    if (chipBuy) {
+        const canBuy = gameState === GameState.PLAYING && score >= 100 && reserveAmmo < (weapon ? weapon.reserveMax : 0);
+        chipBuy.classList.toggle('active', canBuy);
     }
 
-    if (gameState === GameState.PLAYING && !weapon.isReloading && ammo <= Config.lowAmmoThreshold) {
+    if (lowHealthVignette) {
+        const ratio = maxHealth > 0 ? health / maxHealth : 0;
+        const intensity = Math.max(0, (0.35 - ratio) / 0.35);
+        lowHealthVignette.style.opacity = (intensity * 0.6).toFixed(2);
+    }
+
+    if (gameState === GameState.PLAYING && weapon && !weapon.isReloading && ammo <= getLowAmmoThreshold()) {
         const now = Date.now();
         if (now > lowAmmoPromptCooldown) {
             const message = reserveAmmo > 0 ? 'Low ammo - press R to reload' : 'Out of ammo - keep moving';
@@ -1223,6 +2189,10 @@ function updateHUD() {
             lowAmmoPromptCooldown = now + 5000;
         }
     }
+}
+
+function getLowAmmoThreshold() {
+    return Math.max(3, Math.round(maxAmmo * 0.2));
 }
 
 function showPrompt(message, duration = 1600) {
@@ -1266,6 +2236,34 @@ function queueTutorialPrompts() {
     });
 }
 
+function resetRunStats() {
+    damageMultiplier = 1;
+    reloadSpeedMultiplier = 1;
+    moveSpeedMultiplier = 1;
+    magSizeMultiplier = 1;
+    timeSlowIntensity = Config.timeSlowIntensity;
+    timeSlowDuration = Config.timeSlowDuration;
+    maxHealth = Config.maxHealth;
+    resetWeaponState();
+    health = maxHealth;
+    timeScale = 1;
+    timeSlowTimer = 0;
+    document.body.classList.remove('time-slow');
+}
+
+function resetWeaponState() {
+    initWeaponInventory();
+    const defaultWeapon = WeaponCatalog.find((item) => item.type === 'rifle') || WeaponCatalog[0];
+    currentWeaponId = defaultWeapon ? defaultWeapon.id : currentWeaponId;
+    if (weapon) {
+        equipWeapon(currentWeaponId, true);
+    } else if (defaultWeapon) {
+        maxAmmo = defaultWeapon.magSize;
+        ammo = defaultWeapon.magSize;
+        reserveAmmo = defaultWeapon.reserveMax;
+    }
+}
+
 // Game State Functions
 function startGame() {
     startScreen.classList.add('hidden');
@@ -1279,9 +2277,7 @@ function startGame() {
     // Reset game state
     score = 0;
     wave = 1;
-    health = Config.maxHealth;
-    ammo = Config.maxAmmo;
-    reserveAmmo = Config.totalAmmo;
+    resetRunStats();
     lowAmmoPromptCooldown = 0;
     weapon.isReloading = false;
     weapon.canShoot = true;
@@ -1290,6 +2286,7 @@ function startGame() {
     }
     if (reloadFill) {
         reloadFill.style.width = '0%';
+        reloadFill.style.background = 'linear-gradient(90deg, #f6c64f, #ff9248)';
     }
     
     // Clear existing enemies
@@ -1302,6 +2299,9 @@ function startGame() {
     player.yaw = 0;
     player.pitch = 0;
     
+    if (upgradeScreen) {
+        upgradeScreen.classList.add('hidden');
+    }
     updateHUD();
     gameState = GameState.PLAYING;
     
@@ -1324,6 +2324,9 @@ function pauseGame() {
     pauseScreen.classList.remove('hidden');
     document.exitPointerLock();
     clearPrompts();
+    timeScale = 1;
+    timeSlowTimer = 0;
+    document.body.classList.remove('time-slow');
     if (resumeButton) {
         resumeButton.focus();
     }
@@ -1348,9 +2351,7 @@ function restartGame() {
     // Reset game state
     score = 0;
     wave = 1;
-    health = Config.maxHealth;
-    ammo = Config.maxAmmo;
-    reserveAmmo = Config.totalAmmo;
+    resetRunStats();
     weapon.isReloading = false;
     weapon.canShoot = true;
     if (reloadIndicator) {
@@ -1370,6 +2371,9 @@ function restartGame() {
     player.yaw = 0;
     player.pitch = 0;
     
+    if (upgradeScreen) {
+        upgradeScreen.classList.add('hidden');
+    }
     updateHUD();
     gameState = GameState.PLAYING;
     lowAmmoPromptCooldown = 0;
@@ -1391,6 +2395,10 @@ function gameOver() {
     gameState = GameState.GAME_OVER;
     hud.classList.add('hidden');
     gameOverScreen.classList.remove('hidden');
+    if (upgradeScreen) {
+        upgradeScreen.classList.add('hidden');
+    }
+    document.body.classList.remove('time-slow');
     document.getElementById('final-score').textContent = score;
     document.getElementById('final-wave').textContent = wave;
     document.exitPointerLock();
@@ -1437,7 +2445,9 @@ function updatePlayer(delta) {
     // Normalize and apply speed
     if (player.direction.length() > 0) {
         player.direction.normalize();
-        const baseSpeed = keys.shift ? Config.playerSpeed * Config.playerSprintMultiplier : Config.playerSpeed;
+        const baseSpeed = keys.shift
+            ? Config.playerSpeed * Config.playerSprintMultiplier * moveSpeedMultiplier
+            : Config.playerSpeed * moveSpeedMultiplier;
         const speed = baseSpeed * (delta * 60);
         player.velocity.copy(player.direction).multiplyScalar(speed);
     }
@@ -1484,13 +2494,18 @@ function animate() {
     requestAnimationFrame(animate);
     
     const delta = clock.getDelta();
+    updateTimeScale(delta);
+    const scaledDelta = delta * timeScale;
     
     updatePlayer(delta);
-    updateEnemies(delta);
-    updateParticles(delta);
+    updateEnemies(scaledDelta);
+    updateParticles(scaledDelta);
     updateReloadIndicator();
-    
+
+    const shake = getCameraShakeOffset(delta);
+    camera.position.add(shake);
     renderer.render(scene, camera);
+    camera.position.sub(shake);
 }
 
 // Particle Animation

@@ -1,49 +1,57 @@
 # 3D Shooter Game
 
-A first-person shooter game built with Three.js.
+A fast, wave-based first-person shooter built with Three.js. The UI and menus emphasize clarity, feedback, and accessibility while keeping gameplay responsive.
 
 ## How to Run
 
-### Option 1: Using Node.js (Recommended)
+### Option 1: Node.js (Recommended)
 
-1. Open Command Prompt (cmd)
-2. Navigate to the shooter-game folder:
-   ```
-   cd C:\Users\zamee\Documents\shooter-game
-   ```
-3. Run the server:
+1. Open a terminal in this folder.
+2. Run:
    ```
    node server.js
    ```
-4. Open your browser and go to: **http://localhost:3000**
+3. Open http://localhost:3000
 
-### Option 2: Using Python
+### Option 2: Python
 
-If you have Python installed:
-```
-python -m http.server 3000
-```
-Then open http://localhost:3000
+1. Open a terminal in this folder.
+2. Run:
+   ```
+   python -m http.server 3000
+   ```
+3. Open http://localhost:3000
 
-### Option 3: Using VS Code Live Server
+### Option 3: VS Code Live Server
 
-1. Open the shooter-game folder in VS Code
-2. Install the "Live Server" extension
-3. Right-click on `index.html` and select "Open with Live Server"
+1. Open this folder in VS Code.
+2. Install the Live Server extension.
+3. Right-click `index.html` and choose "Open with Live Server".
 
 ## Controls
 
-- **WASD** - Move
-- **Mouse** - Look/Aim
-- **Left Click** - Shoot
-- **R** - Reload
-- **ESC** - Pause
+- **WASD**: Move
+- **Mouse**: Aim / Look
+- **Left Click**: Shoot
+- **R**: Reload
+- **Shift**: Sprint
+- **ESC**: Pause
+- **Enter / Space**: Start, resume, or restart
+- **+ / - / 0**: UI scale up, down, reset
 
 ## Features
 
-- Wave-based enemy spawning
-- Health system
-- Ammo/reload mechanics
-- Score tracking
-- Visual effects (muzzle flash, particles)
-- Sound effects
+- Wave-based enemy spawns with scaling difficulty
+- Modern HUD with health, ammo, wave, score, and enemy count
+- Reload progress indicator and low-ammo prompts
+- Damage feedback with directional indicator and screen flash
+- Muzzle flash, hit markers, and particle effects
+- Ambient UI audio feedback
+- Loading progress screen
+- UI scale persistence and basic accessibility labels
+- Optional debug spawn button via `?debug`
+
+## Notes
+
+- Best played with pointer lock enabled (click the canvas once the match starts).
+- If performance dips, the game will auto-reduce some visual effects.

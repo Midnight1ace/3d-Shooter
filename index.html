@@ -46,12 +46,14 @@
             <div id="status-chips" class="hud-panel compact">
                 <span class="chip" id="chip-sprint">Sprint: Shift</span>
                 <span class="chip" id="chip-reload">Reload: R</span>
+                <span class="chip" id="chip-buy">Buy Ammo: B</span>
                 <span class="chip" id="chip-pause">Pause: Esc</span>
             </div>
         </div>
 
         <div class="hud-corner bottom-right">
             <div id="ammo-panel" class="hud-panel">
+                <div id="weapon-name" class="weapon-name">VX-9 Rifle</div>
                 <div class="hud-label">Ammo</div>
                 <div id="ammo-counter" role="status" aria-live="polite">
                     <span id="current-ammo">30</span>
@@ -107,6 +109,7 @@
                         <li><span class="key">R</span> Reload</li>
                         <li><span class="key">Shift</span> Sprint</li>
                         <li><span class="key">Esc</span> Pause</li>
+                        <li><span class="key">B</span> Buy Ammo</li>
                     </ul>
                 </div>
                 <div class="menu-panel">
@@ -162,6 +165,38 @@
         </div>
     </div>
 
+    <!-- Upgrade Screen -->
+    <div id="upgrade-screen" class="hidden" role="dialog" aria-modal="true">
+        <div class="menu-card upgrade">
+            <div class="armory-header">
+                <div>
+                    <span class="eyebrow">Armory</span>
+                    <h2 class="title-font">Loadout Prep</h2>
+                    <p class="subtitle">Choose an upgrade, swap weapons, and top off ammo before the next wave.</p>
+                </div>
+                <div class="armory-status">
+                    <div class="status-chip">Next Wave <span id="armory-wave">1</span></div>
+                    <div class="status-chip">Credits <span id="armory-credits">0</span></div>
+                </div>
+            </div>
+            <div class="armory-grid">
+                <div class="armory-panel upgrades-panel">
+                    <h3 class="section-title">Upgrades</h3>
+                    <div id="upgrade-options" class="upgrade-grid"></div>
+                    <span class="menu-hint">Press 1, 2, or 3 to choose</span>
+                </div>
+                <div class="armory-panel weapons-panel">
+                    <h3 class="section-title">Weapons</h3>
+                    <div id="weapon-options" class="weapon-grid"></div>
+                    <div class="ammo-buy-row">
+                        <button id="buy-ammo-round-button" class="primary">Buy Ammo (+1 mag) - 50</button>
+                        <div id="credits-display">Credits: <span id="credits">0</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Loading Screen -->
     <div id="loading-screen" role="status" aria-live="polite">
         <div class="menu-card">
@@ -175,6 +210,12 @@
 
     <!-- Damage Overlay -->
     <div id="damage-overlay"></div>
+
+    <!-- Low Health Vignette -->
+    <div id="low-health-vignette"></div>
+
+    <!-- Time Slow Overlay -->
+    <div id="time-slow-overlay"></div>
 
     <!-- Muzzle Flash -->
     <div id="muzzle-flash"></div>
