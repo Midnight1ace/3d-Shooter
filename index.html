@@ -4,80 +4,153 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>3D Shooter Game</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;600;700&family=Spline+Sans:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
     <!-- Game Canvas Container -->
     <div id="game-container">
-        <canvas id="game-canvas"></canvas>
+        <canvas id="game-canvas" tabindex="0" aria-label="3D shooter game canvas"></canvas>
     </div>
 
     <!-- HUD Overlay -->
-    <div id="hud" class="hidden">
-        <div id="health-bar-container">
-            <div id="health-bar"></div>
-            <span id="health-text">100</span>
+    <div id="hud" class="hidden" aria-live="polite">
+        <div class="hud-corner top-left">
+            <div class="hud-panel">
+                <div class="hud-label">Score</div>
+                <div id="score" class="hud-value">0</div>
+            </div>
+            <div class="hud-panel">
+                <div class="hud-label">Wave</div>
+                <div id="wave" class="hud-value">1</div>
+            </div>
         </div>
-        
-        <div id="ammo-counter">
-            <span id="current-ammo">30</span> / <span id="total-ammo">120</span>
+
+        <div class="hud-corner top-right">
+            <div class="hud-panel">
+                <div class="hud-label">Enemies</div>
+                <div id="enemy-count" class="hud-value">0</div>
+            </div>
         </div>
-        
-        <div id="score-display">
-            Score: <span id="score">0</span>
+
+        <div class="hud-corner bottom-left">
+            <div id="health-panel" class="hud-panel">
+                <div class="hud-label">Health</div>
+                <div id="health-bar-container" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
+                    <div id="health-bar"></div>
+                    <span id="health-text">100</span>
+                </div>
+            </div>
+            <div id="status-chips" class="hud-panel compact">
+                <span class="chip" id="chip-sprint">Sprint: Shift</span>
+                <span class="chip" id="chip-reload">Reload: R</span>
+                <span class="chip" id="chip-pause">Pause: Esc</span>
+            </div>
         </div>
-        
-        <div id="wave-display">
-            Wave: <span id="wave">1</span>
+
+        <div class="hud-corner bottom-right">
+            <div id="ammo-panel" class="hud-panel">
+                <div class="hud-label">Ammo</div>
+                <div id="ammo-counter" role="status" aria-live="polite">
+                    <span id="current-ammo">30</span>
+                    <span class="ammo-divider">/</span>
+                    <span id="total-ammo">120</span>
+                </div>
+                <div id="ammo-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
+                    <div id="ammo-fill"></div>
+                </div>
+                <div id="reload-indicator" class="hidden" aria-live="polite">
+                    <span>RELOADING</span>
+                    <div class="reload-bar">
+                        <div id="reload-fill"></div>
+                    </div>
+                </div>
+            </div>
         </div>
-        
-        <button id="spawn-btn" style="position:absolute;top:70px;left:30px;padding:8px 15px;background:#ff4444;color:white;border:none;border-radius:5px;cursor:pointer;font-size:14px;">Spawn Enemy</button>
+
+        <div id="center-hud">
+            <div id="crosshair" aria-hidden="true"></div>
+            <div id="interaction-prompt" class="hidden" role="status"></div>
+        </div>
+
+        <div id="damage-direction" aria-hidden="true"></div>
+
+        <button id="spawn-btn" class="debug-button hidden" aria-label="Spawn an enemy">Spawn Enemy</button>
     </div>
 
     <!-- Start Screen -->
-    <div id="start-screen">
-        <h1>3D Shooter</h1>
-        <p>Survive the enemy waves!</p>
-        <div class="controls-info">
-            <h3>Controls</h3>
-            <p>WASD - Move</p>
-            <p>Mouse - Look/Aim</p>
-            <p>Left Click - Shoot</p>
-            <p>R - Reload</p>
-            <p>ESC - Pause</p>
+    <div id="start-screen" role="dialog" aria-modal="true">
+        <div class="menu-card">
+            <h1 class="title-font">3D Shooter</h1>
+            <p class="subtitle">Survive escalating waves in a fast, responsive arena.</p>
+            <div class="menu-grid">
+                <div class="menu-panel">
+                    <h3>Controls</h3>
+                    <ul>
+                        <li>WASD - Move</li>
+                        <li>Mouse - Look/Aim</li>
+                        <li>Left Click - Shoot</li>
+                        <li>R - Reload</li>
+                        <li>Shift - Sprint</li>
+                        <li>ESC - Pause</li>
+                    </ul>
+                </div>
+                <div class="menu-panel">
+                    <h3>Tips</h3>
+                    <ul>
+                        <li>Keep moving to avoid melee hits.</li>
+                        <li>Reload before you are empty.</li>
+                        <li>Use cover to regroup between waves.</li>
+                    </ul>
+                </div>
+            </div>
+            <button id="start-button" class="primary">Start Mission</button>
+            <span class="menu-hint">Press Enter to start</span>
         </div>
-        <button id="start-button">Click to Start</button>
     </div>
 
     <!-- Pause Screen -->
-    <div id="pause-screen" class="hidden">
-        <h2>PAUSED</h2>
-        <button id="resume-button">Resume</button>
-        <button id="restart-button">Restart</button>
+    <div id="pause-screen" class="hidden" role="dialog" aria-modal="true">
+        <div class="menu-card">
+            <h2 class="title-font">Paused</h2>
+            <p class="subtitle">Take a breath. Adjust UI scale with +/-.</p>
+            <button id="resume-button" class="primary">Resume</button>
+            <button id="restart-button">Restart</button>
+        </div>
     </div>
 
     <!-- Game Over Screen -->
-    <div id="game-over-screen" class="hidden">
-        <h2>GAME OVER</h2>
-        <p>Final Score: <span id="final-score">0</span></p>
-        <p>Wave Reached: <span id="final-wave">1</span></p>
-        <button id="restart-game-button">Play Again</button>
+    <div id="game-over-screen" class="hidden" role="dialog" aria-modal="true">
+        <div class="menu-card">
+            <h2 class="title-font">Game Over</h2>
+            <p class="stat-line">Final Score: <span id="final-score">0</span></p>
+            <p class="stat-line">Wave Reached: <span id="final-wave">1</span></p>
+            <button id="restart-game-button" class="primary">Play Again</button>
+        </div>
     </div>
 
     <!-- Loading Screen -->
-    <div id="loading-screen">
-        <h2>Loading...</h2>
+    <div id="loading-screen" role="status" aria-live="polite">
+        <div class="menu-card">
+            <h2 class="title-font">Loading</h2>
+            <div id="loading-bar">
+                <div id="loading-fill"></div>
+            </div>
+            <div class="loading-text"><span id="loading-percent">0</span>%</div>
+        </div>
     </div>
 
     <!-- Damage Overlay -->
     <div id="damage-overlay"></div>
-    
+
     <!-- Muzzle Flash -->
     <div id="muzzle-flash"></div>
 
     <!-- Three.js Library -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    
+
     <!-- Game Modules -->
     <script type="module" src="js/main.js"></script>
 </body>
