@@ -1,0 +1,13 @@
+{
+  "name": "3d-shooter",
+  "version": "1.4.0",
+  "description": "A fast, wave-based first-person shooter built with Three.js",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": ["game", "threejs", "fps", "shooter"],
+  "author": "Zameer",
+  "license": "ISC"
+}

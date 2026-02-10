@@ -109,7 +109,6 @@
                         <li><span class="key">R</span> Reload</li>
                         <li><span class="key">Shift</span> Sprint</li>
                         <li><span class="key">Esc</span> Pause</li>
-                        <li><span class="key">B</span> Buy Ammo</li>
                     </ul>
                 </div>
                 <div class="menu-panel">
@@ -149,7 +148,7 @@
     <div id="pause-screen" class="hidden" role="dialog" aria-modal="true">
         <div class="menu-card compact">
             <h2 class="title-font">Paused</h2>
-            <p class="subtitle">Take a breath. Adjust UI scale with +/-.</p>
+            <p class="subtitle">Take a breath.</p>
             <button id="resume-button" class="primary">Resume</button>
             <button id="restart-button">Restart</button>
         </div>
@@ -222,6 +221,8 @@
 
     <!-- Three.js Library -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 
     <!-- Game Modules -->
     <script type="module" src="js/main.js"></script>

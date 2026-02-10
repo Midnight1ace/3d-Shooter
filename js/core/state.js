@@ -1,0 +1,32 @@
+import { Config, GamePhase } from './config.js';
+
+export const state = {
+    phase: GamePhase.LOADING,
+    score: 0,
+    wave: 1,
+    maxHealth: Config.maxHealth,
+    health: Config.maxHealth,
+    maxAmmo: Config.maxAmmo,
+    ammo: Config.maxAmmo,
+    reserveAmmo: Config.totalAmmo,
+    isPointerLocked: false,
+    uiScale: 1,
+    lowPowerMode: false,
+    reloadStartTime: 0,
+    reloadDurationCurrent: Config.reloadDuration,
+    damageMultiplier: 1,
+    reloadSpeedMultiplier: 1,
+    moveSpeedMultiplier: 1,
+    magSizeMultiplier: 1,
+    timeSlowIntensity: Config.timeSlowIntensity,
+    timeSlowDuration: Config.timeSlowDuration,
+    timeScale: 1,
+    timeSlowTimer: 0,
+    cameraShake: 0,
+    hitStopTimer: 0,
+    screenShakeEnabled: true,
+    hitStopEnabled: true,
+    freeAmmoUsed: false,
+    currentWeaponId: 'rifle-guardian',
+    debugMode: false
+};

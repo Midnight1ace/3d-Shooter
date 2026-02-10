@@ -2,7 +2,38 @@
 
 A fast, wave-based first-person shooter built with Three.js. The UI and menus emphasize clarity, feedback, and accessibility while keeping gameplay responsive.
 
-## How to Run
+## Browser MCP Integration
+
+This project supports Browser MCP for browser automation. This allows AI assistants (VS Code, Cursor, Claude, etc.) to interact with and test the game in a browser.
+
+### Setup
+
+1. **For Cursor/Claude Desktop**: Add this configuration to your MCP settings file:
+   ```json
+   {
+     "mcpServers": {
+       "browser": {
+         "command": "npx",
+         "args": ["-y", "@browserbase/mcp-server-browser"],
+         "env": {}
+       }
+     }
+   }
+   ```
+
+2. **For VS Code with MCP extension**: Copy `.mcp-config.json` to your settings or use the MCP extension to add the server.
+
+3. Start the game with `node server.js`
+
+### Usage
+
+Once configured, you can ask your AI assistant to:
+- Open and test the game in a browser
+- Take screenshots of the game
+- Interact with UI elements
+- Debug game issues
+
+**Note**: Browser MCP will be downloaded automatically via npx when first used.
 
 ### Option 1: Node.js (Recommended)
 
