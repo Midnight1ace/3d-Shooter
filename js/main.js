@@ -177,8 +177,38 @@ async function initPhysics() {
 
 function resetPlayerPhysics() {
     if (!physics?.playerBody) return;
-    physics.playerBody.setLinvel({ x: 0, y: 0, z: 0 }, true);
-    physics.playerBody.setTranslation({ x: 0, y: Config.playerHeight, z: 0 }, true);
+    try {
+        physics.playerBody.setLinvel({ x: 0, y: 0, z: 0 }, true);
+        physics.playerBody.setTranslation({ x: 0, y: Config.playerHeight, z: 0 }, true);
+    } catch (error) {
+        disablePhysics('Player physics reset failed.', error);
+    }
+}
+
+function disablePhysics(reason, error = null) {
+    if (!physics && !refs.physics) return;
+    if (error) {
+        console.warn(reason, error);
+    } else {
+        console.warn(reason);
+    }
+    physics = null;
+    refs.physics = null;
+    collections.enemies.forEach((enemy) => {
+        if (!enemy) return;
+        enemy.body = null;
+        enemy.collider = null;
+    });
+    collections.mapObstacles.forEach((obstacle) => {
+        if (obstacle?.userData) {
+            obstacle.userData.colliderHandle = null;
+        }
+    });
+    collections.pickups.forEach((pickup) => {
+        if (pickup?.userData) {
+            pickup.userData.colliderHandle = null;
+        }
+    });
 }
 
 function stepPhysics(delta) {
@@ -191,22 +221,24 @@ function stepPhysics(delta) {
         }
         physics.world.step();
     } catch (error) {
-        console.warn('Physics step failed. Disabling physics.', error);
-        physics = null;
-        refs.physics = null;
+        disablePhysics('Physics step failed. Disabling physics.', error);
     }
 }
 
 function syncPlayerFromPhysics() {
     if (!physics?.playerBody) return;
-    const pos = physics.playerBody.translation();
-    const clampedX = Math.max(-WORLD_BOUNDARY, Math.min(WORLD_BOUNDARY, pos.x));
-    const clampedZ = Math.max(-WORLD_BOUNDARY, Math.min(WORLD_BOUNDARY, pos.z));
-    const bodyY = Config.playerHeight;
-    if (clampedX !== pos.x || clampedZ !== pos.z || pos.y !== bodyY) {
-        physics.playerBody.setTranslation({ x: clampedX, y: bodyY, z: clampedZ }, true);
+    try {
+        const pos = physics.playerBody.translation();
+        const clampedX = Math.max(-WORLD_BOUNDARY, Math.min(WORLD_BOUNDARY, pos.x));
+        const clampedZ = Math.max(-WORLD_BOUNDARY, Math.min(WORLD_BOUNDARY, pos.z));
+        const bodyY = Config.playerHeight;
+        if (clampedX !== pos.x || clampedZ !== pos.z || pos.y !== bodyY) {
+            physics.playerBody.setTranslation({ x: clampedX, y: bodyY, z: clampedZ }, true);
+        }
+        camera.position.set(clampedX, bodyY + (player?.viewOffsetY || 0), clampedZ);
+    } catch (error) {
+        disablePhysics('Sync player from physics failed. Falling back to non-physics movement.', error);
     }
-    camera.position.set(clampedX, bodyY + (player?.viewOffsetY || 0), clampedZ);
 }
 
 function getColliderHandle(collider) {
@@ -1026,27 +1058,42 @@ function buyAmmo(cost, source) {
 
 function openUpgradeScreen() {
     if (state.phase !== GamePhase.PLAYING) return;
-    state.phase = GamePhase.CHOOSING;
-    document.exitPointerLock();
-    ui.clearPrompts();
-    dom.hud?.classList.add('hidden');
-    state.timeScale = 1;
-    state.timeSlowTimer = 0;
-    document.body.classList.remove('time-slow');
-    upgradeOptions = generateUpgradeOptions();
-    ui.renderUpgradeOptions(upgradeOptions, selectUpgrade);
+    const previousPhase = state.phase;
+    try {
+        state.phase = GamePhase.CHOOSING;
+        if (typeof document.exitPointerLock === 'function') {
+            document.exitPointerLock();
+        }
+        ui.clearPrompts();
+        dom.hud?.classList.add('hidden');
+        state.timeScale = 1;
+        state.timeSlowTimer = 0;
+        document.body.classList.remove('time-slow');
+        upgradeOptions = generateUpgradeOptions();
+        ui.renderUpgradeOptions(upgradeOptions, selectUpgrade);
 
-    ui.showUpgradeScreen();
-    ui.renderWeaponOptions();
-    ui.updateCredits();
-    if (dom.armoryWaveEl) {
-        dom.armoryWaveEl.textContent = state.wave;
+        ui.showUpgradeScreen();
+        ui.renderWeaponOptions();
+        ui.updateCredits();
+        if (dom.armoryWaveEl) {
+            dom.armoryWaveEl.textContent = state.wave;
+        }
+        if (dom.armoryCreditsEl) {
+            dom.armoryCreditsEl.textContent = state.score;
+        }
+        const firstButton = dom.upgradeOptionsEl?.querySelector('button');
+        if (firstButton) firstButton.focus();
+    } catch (error) {
+        console.error('Failed to open upgrade screen. Continuing to next wave.', error);
+        state.phase = previousPhase;
+        dom.hud?.classList.remove('hidden');
+        ui.hideUpgradeScreen();
+        startWave();
+        dom.gameCanvas?.requestPointerLock();
+        dom.gameCanvas?.focus();
+        clock.start();
+        animate();
     }
-    if (dom.armoryCreditsEl) {
-        dom.armoryCreditsEl.textContent = state.score;
-    }
-    const firstButton = dom.upgradeOptionsEl?.querySelector('button');
-    if (firstButton) firstButton.focus();
 }
 
 function closeUpgradeScreen() {
@@ -1213,7 +1260,9 @@ function startGame() {
 function pauseGame() {
     state.phase = GamePhase.PAUSED;
     dom.pauseScreen?.classList.remove('hidden');
-    document.exitPointerLock();
+    if (typeof document.exitPointerLock === 'function') {
+        document.exitPointerLock();
+    }
     ui.clearPrompts();
     state.timeScale = 1;
     state.timeSlowTimer = 0;
@@ -1286,7 +1335,9 @@ function gameOver() {
     document.body.classList.remove('time-slow');
     document.getElementById('final-score').textContent = state.score;
     document.getElementById('final-wave').textContent = state.wave;
-    document.exitPointerLock();
+    if (typeof document.exitPointerLock === 'function') {
+        document.exitPointerLock();
+    }
     ui.clearPrompts();
     dom.restartGameButton?.focus();
 }
@@ -1337,7 +1388,17 @@ function updatePlayer(delta) {
 
     const body = refs.physics?.playerBody;
     if (body) {
-        body.setLinvel({ x: player.velocity.x, y: 0, z: player.velocity.z }, true);
+        try {
+            body.setLinvel({ x: player.velocity.x, y: 0, z: player.velocity.z }, true);
+        } catch (error) {
+            disablePhysics('Player movement physics failed. Falling back to non-physics movement.', error);
+            const desiredPosition = camera.position.clone().addScaledVector(player.velocity, delta);
+            desiredPosition.y = Config.playerHeight;
+            const resolvedPosition = resolvePlayerCollisions(desiredPosition);
+            camera.position.copy(resolvedPosition);
+            camera.position.x = Math.max(-WORLD_BOUNDARY, Math.min(WORLD_BOUNDARY, camera.position.x));
+            camera.position.z = Math.max(-WORLD_BOUNDARY, Math.min(WORLD_BOUNDARY, camera.position.z));
+        }
     } else {
         const desiredPosition = camera.position.clone().addScaledVector(player.velocity, delta);
         desiredPosition.y = Config.playerHeight;

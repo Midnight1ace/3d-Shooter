@@ -5,6 +5,13 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
         pathfinding: null,
         zoneId: null
     };
+    const waveState = {
+        spawnTimers: new Set(),
+        clearTimer: null,
+        pendingSpawns: 0,
+        token: 0,
+        active: false
+    };
     const particleGeometries = {
         hit: new THREE.SphereGeometry(0.06, 6, 6),
         death: new THREE.SphereGeometry(0.1, 4, 4),
@@ -15,6 +22,38 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
         death: 0x8B0000,
         explosion: [0xffa500, 0xff4d4d]
     };
+
+    function clearWaveTimers() {
+        waveState.spawnTimers.forEach((timerId) => clearTimeout(timerId));
+        waveState.spawnTimers.clear();
+        if (waveState.clearTimer) {
+            clearTimeout(waveState.clearTimer);
+            waveState.clearTimer = null;
+        }
+        waveState.pendingSpawns = 0;
+        waveState.active = false;
+        waveState.token += 1;
+    }
+
+    function maybeCompleteWave() {
+        if (!waveState.active) return;
+        if (waveState.pendingSpawns > 0) return;
+        if (collections.enemies.length > 0) return;
+
+        waveState.active = false;
+        state.wave += 1;
+        ui.updateHUD();
+
+        if (waveState.clearTimer) {
+            clearTimeout(waveState.clearTimer);
+        }
+        waveState.clearTimer = setTimeout(() => {
+            waveState.clearTimer = null;
+            if (state.phase === GamePhase.PLAYING) {
+                callbacks?.onWaveCleared?.();
+            }
+        }, 1200);
+    }
 
     function acquireParticle(type) {
         const pool = collections.particlePools[type];
@@ -90,23 +129,24 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
 
     function removeEnemyPhysics(enemy) {
         const physics = getPhysics();
-        if (!physics?.world) return;
-        const colliderHandle = getColliderHandle(enemy?.collider);
-        try {
-            if (colliderHandle != null) {
-                physics.world.removeCollider(colliderHandle, true);
-            }
-        } catch (error) {
-            // Ignore removal errors to keep the loop alive.
-        }
-        if (enemy?.body) {
-            const bodyHandle = typeof enemy.body === 'number' ? enemy.body : enemy.body.handle;
+        if (physics?.world) {
+            const colliderHandle = getColliderHandle(enemy?.collider);
             try {
-                if (bodyHandle != null) {
-                    physics.world.removeRigidBody(bodyHandle);
+                if (colliderHandle != null) {
+                    physics.world.removeCollider(colliderHandle, true);
                 }
             } catch (error) {
                 // Ignore removal errors to keep the loop alive.
+            }
+            if (enemy?.body) {
+                const bodyHandle = typeof enemy.body === 'number' ? enemy.body : enemy.body.handle;
+                try {
+                    if (bodyHandle != null) {
+                        physics.world.removeRigidBody(bodyHandle);
+                    }
+                } catch (error) {
+                    // Ignore removal errors to keep the loop alive.
+                }
             }
         }
         enemy.collider = null;
@@ -332,6 +372,8 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
             if (idx >= 0) {
                 collections.enemies.splice(idx, 1);
             }
+            ui.updateHUD();
+            maybeCompleteWave();
         }, delay);
     }
 
@@ -408,6 +450,7 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
         if (index < 0 || index >= collections.enemies.length) return;
 
         const enemy = collections.enemies[index];
+        if (!enemy || enemy.isDying) return;
 
         if (enemy.role === 'exploder') {
             explodeEnemy(index, true);
@@ -430,21 +473,14 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
         ui.updateHUD();
         audio?.playUiSound?.('kill');
         callbacks?.onTriggerTimeSlow?.();
-
-        if (collections.enemies.length === 0) {
-            state.wave += 1;
-            ui.updateHUD();
-            setTimeout(() => {
-                if (state.phase === GamePhase.PLAYING) {
-                    callbacks?.onWaveCleared?.();
-                }
-            }, 1200);
-        }
+        maybeCompleteWave();
     }
 
     function explodeEnemy(index, fromKill = false) {
         if (index < 0 || index >= collections.enemies.length) return;
         const enemy = collections.enemies[index];
+        if (!enemy || enemy.isDying) return;
+        enemy.isDying = true;
         const position = enemy.mesh.position.clone();
         createExplosionEffect(position);
         callbacks?.onEnemyDrop?.(position.clone());
@@ -462,16 +498,7 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
         ui.updateHUD();
         audio?.playUiSound?.('kill');
         callbacks?.onTriggerTimeSlow?.();
-
-        if (collections.enemies.length === 0) {
-            state.wave += 1;
-            ui.updateHUD();
-            setTimeout(() => {
-                if (state.phase === GamePhase.PLAYING) {
-                    callbacks?.onWaveCleared?.();
-                }
-            }, 1200);
-        }
+        maybeCompleteWave();
     }
 
     function createDeathEffect(position) {
@@ -525,6 +552,7 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
     }
 
     function startWave() {
+        clearWaveTimers();
         callbacks?.onWaveStart?.();
         if (state.phase === GamePhase.CHOOSING) {
             state.phase = GamePhase.PLAYING;
@@ -532,8 +560,22 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
         if (state.phase !== GamePhase.PLAYING) return;
         callbacks?.onRegenerateMap?.();
         const enemyCount = 3 + state.wave * 2;
+        waveState.token += 1;
+        const token = waveState.token;
+        waveState.pendingSpawns = enemyCount;
+        waveState.active = true;
         for (let i = 0; i < enemyCount; i++) {
-            setTimeout(() => spawnEnemy(), i * 500);
+            const timerId = setTimeout(() => {
+                waveState.spawnTimers.delete(timerId);
+                if (token !== waveState.token) return;
+                try {
+                    spawnEnemy();
+                } finally {
+                    waveState.pendingSpawns = Math.max(0, waveState.pendingSpawns - 1);
+                    maybeCompleteWave();
+                }
+            }, i * 500);
+            waveState.spawnTimers.add(timerId);
         }
         ui.showPrompt(`Wave ${state.wave} incoming`, 1400);
     }
@@ -543,6 +585,7 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
         const scaledDelta = delta * timeScale;
         const physics = getPhysics();
         const world = physics?.world || null;
+        const usePhysics = Boolean(world);
         const playerCollider = physics?.playerCollider || null;
         const playerPos = physics?.playerBody
             ? new THREE.Vector3(
@@ -559,8 +602,13 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
                 enemy.mixer.update(scaledDelta);
             }
             if (enemy.isDying) {
-                if (enemy.body) {
-                    enemy.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+                if (usePhysics && enemy.body) {
+                    try {
+                        enemy.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+                    } catch (error) {
+                        enemy.body = null;
+                        enemy.collider = null;
+                    }
                 }
                 continue;
             }
@@ -574,7 +622,7 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
                 }
             }
 
-            const enemyPos = enemy.body
+            const enemyPos = (usePhysics && enemy.body)
                 ? new THREE.Vector3(enemy.body.translation().x, enemy.body.translation().y, enemy.body.translation().z)
                 : enemy.mesh.position.clone();
             const direction = new THREE.Vector3().subVectors(playerPos, enemyPos);
@@ -621,15 +669,26 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
             }
 
             if (distance > 2) {
-                if (enemy.body) {
-                    enemy.body.setLinvel({ x: moveDir.x * speed, y: 0, z: moveDir.z * speed }, true);
+                if (usePhysics && enemy.body) {
+                    try {
+                        enemy.body.setLinvel({ x: moveDir.x * speed, y: 0, z: moveDir.z * speed }, true);
+                    } catch (error) {
+                        enemy.body = null;
+                        enemy.collider = null;
+                        enemy.mesh.position.addScaledVector(moveDir, enemy.speed * (delta * 60) * timeScale);
+                    }
                 } else {
                     enemy.mesh.position.addScaledVector(moveDir, enemy.speed * (delta * 60) * timeScale);
                 }
                 if (enemy.animations) playAnimation(enemy, 'run');
             } else if (enemy.animations) {
-                if (enemy.body) {
-                    enemy.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+                if (usePhysics && enemy.body) {
+                    try {
+                        enemy.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+                    } catch (error) {
+                        enemy.body = null;
+                        enemy.collider = null;
+                    }
                 }
                 playAnimation(enemy, 'attack');
             }
@@ -644,7 +703,7 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
                 callbacks?.onPlayerDamage?.(config.enemyDamage, enemy.mesh.position);
             }
 
-            if (!world || !enemy.body) {
+            if (!usePhysics || !enemy.body) {
                 resolveEnemyCollisions(enemy);
             }
         }
@@ -689,6 +748,8 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
     }
 
     function syncEnemyBodies() {
+        const world = getPhysics()?.world || null;
+        if (!world) return;
         for (let i = collections.enemies.length - 1; i >= 0; i--) {
             const enemy = collections.enemies[i];
             if (!enemy?.body) continue;
@@ -729,7 +790,7 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
 
     function applyDamage(enemyIndex, damage, hitPoint) {
         const enemy = collections.enemies[enemyIndex];
-        if (!enemy) return false;
+        if (!enemy || enemy.isDying) return false;
         enemy.health -= damage;
         triggerHitAnimation(enemy);
         createHitEffect(hitPoint);
