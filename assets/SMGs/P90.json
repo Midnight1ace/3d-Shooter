@@ -1,0 +1,286 @@
+{
+  "meta": {
+    "format_version": "4.10",
+    "model_format": "generic",
+    "box_uv": true
+  },
+  "resolution": {
+    "width": 64,
+    "height": 64
+  },
+  "textures": [
+    {
+      "name": "default",
+      "folder": "",
+      "namespace": "",
+      "id": "0",
+      "particle": false,
+      "render_mode": "default"
+    }
+  ],
+  "elements": [
+    {
+      "name": "Body_Main",
+      "from": [-6, 4, -1.5],
+      "to": [4, 8, 1.5],
+      "faces": {
+        "north": {"uv": [0, 0, 10, 4], "texture": 0},
+        "south": {"uv": [0, 0, 10, 4], "texture": 0},
+        "east": {"uv": [0, 0, 3, 4], "texture": 0},
+        "west": {"uv": [0, 0, 3, 4], "texture": 0},
+        "up": {"uv": [0, 0, 10, 3], "texture": 0},
+        "down": {"uv": [0, 0, 10, 3], "texture": 0}
+      }
+    },
+    {
+      "name": "Body_Rear_Curve",
+      "from": [-7, 4.5, -1.5],
+      "to": [-6, 7.5, 1.5],
+      "faces": {
+        "north": {"uv": [0, 0, 1, 3], "texture": 0},
+        "south": {"uv": [0, 0, 1, 3], "texture": 0},
+        "east": {"uv": [0, 0, 3, 3], "texture": 0},
+        "west": {"uv": [0, 0, 3, 3], "texture": 0},
+        "up": {"uv": [0, 0, 1, 3], "texture": 0},
+        "down": {"uv": [0, 0, 1, 3], "texture": 0}
+      }
+    },
+    {
+      "name": "Magazine_Base",
+      "from": [-6, 8, -1.5],
+      "to": [4, 9, 1.5],
+      "faces": {
+        "north": {"uv": [0, 0, 10, 1], "texture": 0},
+        "south": {"uv": [0, 0, 10, 1], "texture": 0},
+        "east": {"uv": [0, 0, 3, 1], "texture": 0},
+        "west": {"uv": [0, 0, 3, 1], "texture": 0},
+        "up": {"uv": [0, 0, 10, 3], "texture": 0},
+        "down": {"uv": [0, 0, 10, 3], "texture": 0}
+      }
+    },
+    {
+      "name": "Magazine_Detail_Top",
+      "from": [-5, 9, -1.2],
+      "to": [3, 9.5, 1.2],
+      "faces": {
+        "north": {"uv": [0, 0, 8, 0.5], "texture": 0},
+        "south": {"uv": [0, 0, 8, 0.5], "texture": 0},
+        "east": {"uv": [0, 0, 2.4, 0.5], "texture": 0},
+        "west": {"uv": [0, 0, 2.4, 0.5], "texture": 0},
+        "up": {"uv": [0, 0, 8, 2.4], "texture": 0},
+        "down": {"uv": [0, 0, 8, 2.4], "texture": 0}
+      }
+    },
+    {
+      "name": "Magazine_Feed_Lips",
+      "from": [3, 8, -1],
+      "to": [4, 8.5, 1],
+      "faces": {
+        "north": {"uv": [0, 0, 1, 0.5], "texture": 0},
+        "south": {"uv": [0, 0, 1, 0.5], "texture": 0},
+        "east": {"uv": [0, 0, 2, 0.5], "texture": 0},
+        "west": {"uv": [0, 0, 2, 0.5], "texture": 0},
+        "up": {"uv": [0, 0, 1, 2], "texture": 0},
+        "down": {"uv": [0, 0, 1, 2], "texture": 0}
+      }
+    },
+    {
+      "name": "Grip_Main",
+      "from": [0, 0, -1],
+      "to": [2, 4, 1],
+      "rotation": {"angle": 22.5, "axis": "z", "origin": [1, 4, 0]},
+      "faces": {
+        "north": {"uv": [0, 0, 2, 4], "texture": 0},
+        "south": {"uv": [0, 0, 2, 4], "texture": 0},
+        "east": {"uv": [0, 0, 2, 4], "texture": 0},
+        "west": {"uv": [0, 0, 2, 4], "texture": 0},
+        "up": {"uv": [0, 0, 2, 2], "texture": 0},
+        "down": {"uv": [0, 0, 2, 2], "texture": 0}
+      }
+    },
+    {
+      "name": "Grip_Front_Curve",
+      "from": [1.5, 0.5, -1],
+      "to": [2.5, 3.5, 1],
+      "rotation": {"angle": 22.5, "axis": "z", "origin": [1, 4, 0]},
+      "faces": {
+        "north": {"uv": [0, 0, 1, 3], "texture": 0},
+        "south": {"uv": [0, 0, 1, 3], "texture": 0},
+        "east": {"uv": [0, 0, 2, 3], "texture": 0},
+        "west": {"uv": [0, 0, 2, 3], "texture": 0},
+        "up": {"uv": [0, 0, 1, 2], "texture": 0},
+        "down": {"uv": [0, 0, 1, 2], "texture": 0}
+      }
+    },
+    {
+      "name": "Thumbhole_Bridge",
+      "from": [-4, 4, -1.5],
+      "to": [-2, 6, 1.5],
+      "faces": {
+        "north": {"uv": [0, 0, 2, 2], "texture": 0},
+        "south": {"uv": [0, 0, 2, 2], "texture": 0},
+        "east": {"uv": [0, 0, 3, 2], "texture": 0},
+        "west": {"uv": [0, 0, 3, 2], "texture": 0},
+        "up": {"uv": [0, 0, 2, 3], "texture": 0},
+        "down": {"uv": [0, 0, 2, 3], "texture": 0}
+      }
+    },
+    {
+      "name": "Barrel",
+      "from": [4, 6, -0.5],
+      "to": [6, 7, 0.5],
+      "faces": {
+        "north": {"uv": [0, 0, 2, 1], "texture": 0},
+        "south": {"uv": [0, 0, 2, 1], "texture": 0},
+        "east": {"uv": [0, 0, 1, 1], "texture": 0},
+        "west": {"uv": [0, 0, 1, 1], "texture": 0},
+        "up": {"uv": [0, 0, 2, 1], "texture": 0},
+        "down": {"uv": [0, 0, 2, 1], "texture": 0}
+      }
+    },
+    {
+      "name": "FlashHider_Base",
+      "from": [6, 6.2, -0.6],
+      "to": [7, 6.8, 0.6],
+      "faces": {
+        "north": {"uv": [0, 0, 1, 0.6], "texture": 0},
+        "south": {"uv": [0, 0, 1, 0.6], "texture": 0},
+        "east": {"uv": [0, 0, 1.2, 0.6], "texture": 0},
+        "west": {"uv": [0, 0, 1.2, 0.6], "texture": 0},
+        "up": {"uv": [0, 0, 1, 1.2], "texture": 0},
+        "down": {"uv": [0, 0, 1, 1.2], "texture": 0}
+      }
+    },
+    {
+      "name": "FlashHider_Slant",
+      "from": [6.8, 6.2, -0.6],
+      "to": [7.5, 6.8, 0.6],
+      "rotation": {"angle": -22.5, "axis": "z", "origin": [6.8, 6.5, 0]},
+      "faces": {
+        "north": {"uv": [0, 0, 0.7, 0.6], "texture": 0},
+        "south": {"uv": [0, 0, 0.7, 0.6], "texture": 0},
+        "east": {"uv": [0, 0, 1.2, 0.6], "texture": 0},
+        "west": {"uv": [0, 0, 1.2, 0.6], "texture": 0},
+        "up": {"uv": [0, 0, 0.7, 1.2], "texture": 0},
+        "down": {"uv": [0, 0, 0.7, 1.2], "texture": 0}
+      }
+    },
+    {
+      "name": "TopRail_Base",
+      "from": [-2, 9, -0.8],
+      "to": [2, 9.5, 0.8],
+      "faces": {
+        "north": {"uv": [0, 0, 4, 0.5], "texture": 0},
+        "south": {"uv": [0, 0, 4, 0.5], "texture": 0},
+        "east": {"uv": [0, 0, 1.6, 0.5], "texture": 0},
+        "west": {"uv": [0, 0, 1.6, 0.5], "texture": 0},
+        "up": {"uv": [0, 0, 4, 1.6], "texture": 0},
+        "down": {"uv": [0, 0, 4, 1.6], "texture": 0}
+      }
+    },
+    {
+      "name": "TopRail_Side_Left",
+      "from": [-1, 9, -1.2],
+      "to": [1, 9.5, -0.8],
+      "faces": {
+        "north": {"uv": [0, 0, 2, 0.5], "texture": 0},
+        "south": {"uv": [0, 0, 2, 0.5], "texture": 0},
+        "east": {"uv": [0, 0, 0.4, 0.5], "texture": 0},
+        "west": {"uv": [0, 0, 0.4, 0.5], "texture": 0},
+        "up": {"uv": [0, 0, 2, 0.4], "texture": 0},
+        "down": {"uv": [0, 0, 2, 0.4], "texture": 0}
+      }
+    },
+    {
+      "name": "TopRail_Side_Right",
+      "from": [-1, 9, 0.8],
+      "to": [1, 9.5, 1.2],
+      "faces": {
+        "north": {"uv": [0, 0, 2, 0.5], "texture": 0},
+        "south": {"uv": [0, 0, 2, 0.5], "texture": 0},
+        "east": {"uv": [0, 0, 0.4, 0.5], "texture": 0},
+        "west": {"uv": [0, 0, 0.4, 0.5], "texture": 0},
+        "up": {"uv": [0, 0, 2, 0.4], "texture": 0},
+        "down": {"uv": [0, 0, 2, 0.4], "texture": 0}
+      }
+    },
+    {
+      "name": "ChargingHandleLeft",
+      "from": [-1, 6, -2],
+      "to": [0, 6.5, -1.5],
+      "faces": {
+        "north": {"uv": [0, 0, 1, 0.5], "texture": 0},
+        "south": {"uv": [0, 0, 1, 0.5], "texture": 0},
+        "east": {"uv": [0, 0, 0.5, 0.5], "texture": 0},
+        "west": {"uv": [0, 0, 0.5, 0.5], "texture": 0},
+        "up": {"uv": [0, 0, 1, 0.5], "texture": 0},
+        "down": {"uv": [0, 0, 1, 0.5], "texture": 0}
+      }
+    },
+    {
+      "name": "ChargingHandleRight",
+      "from": [-1, 6, 1.5],
+      "to": [0, 6.5, 2],
+      "faces": {
+        "north": {"uv": [0, 0, 1, 0.5], "texture": 0},
+        "south": {"uv": [0, 0, 1, 0.5], "texture": 0},
+        "east": {"uv": [0, 0, 0.5, 0.5], "texture": 0},
+        "west": {"uv": [0, 0, 0.5, 0.5], "texture": 0},
+        "up": {"uv": [0, 0, 1, 0.5], "texture": 0},
+        "down": {"uv": [0, 0, 1, 0.5], "texture": 0}
+      }
+    },
+    {
+      "name": "TriggerGuard",
+      "from": [0, 2, -0.5],
+      "to": [3, 4, 0.5],
+      "faces": {
+        "north": {"uv": [0, 0, 3, 2], "texture": 0},
+        "south": {"uv": [0, 0, 3, 2], "texture": 0},
+        "east": {"uv": [0, 0, 1, 2], "texture": 0},
+        "west": {"uv": [0, 0, 1, 2], "texture": 0},
+        "up": {"uv": [0, 0, 3, 1], "texture": 0},
+        "down": {"uv": [0, 0, 3, 1], "texture": 0}
+      }
+    },
+    {
+      "name": "Trigger",
+      "from": [1.5, 3, -0.2],
+      "to": [2, 4, 0.2],
+      "faces": {
+        "north": {"uv": [0, 0, 0.5, 1], "texture": 0},
+        "south": {"uv": [0, 0, 0.5, 1], "texture": 0},
+        "east": {"uv": [0, 0, 0.4, 1], "texture": 0},
+        "west": {"uv": [0, 0, 0.4, 1], "texture": 0},
+        "up": {"uv": [0, 0, 0.5, 0.4], "texture": 0},
+        "down": {"uv": [0, 0, 0.5, 0.4], "texture": 0}
+      }
+    },
+    {
+      "name": "FrontSight_Post",
+      "from": [1.5, 9.5, -0.1],
+      "to": [1.8, 10.5, 0.1],
+      "faces": {
+        "north": {"uv": [0, 0, 0.3, 1], "texture": 0},
+        "south": {"uv": [0, 0, 0.3, 1], "texture": 0},
+        "east": {"uv": [0, 0, 0.2, 1], "texture": 0},
+        "west": {"uv": [0, 0, 0.2, 1], "texture": 0},
+        "up": {"uv": [0, 0, 0.3, 0.2], "texture": 0},
+        "down": {"uv": [0, 0, 0.3, 0.2], "texture": 0}
+      }
+    },
+    {
+      "name": "RearSight_Notch",
+      "from": [-1.8, 9.5, -0.4],
+      "to": [-1.5, 10, 0.4],
+      "faces": {
+        "north": {"uv": [0, 0, 0.3, 0.5], "texture": 0},
+        "south": {"uv": [0, 0, 0.3, 0.5], "texture": 0},
+        "east": {"uv": [0, 0, 0.8, 0.5], "texture": 0},
+        "west": {"uv": [0, 0, 0.8, 0.5], "texture": 0},
+        "up": {"uv": [0, 0, 0.3, 0.8], "texture": 0},
+        "down": {"uv": [0, 0, 0.3, 0.8], "texture": 0}
+      }
+    }
+  ]
+}

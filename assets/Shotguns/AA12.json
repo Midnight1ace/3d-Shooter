@@ -1,0 +1,246 @@
+{
+  "meta": {
+    "format_version": "4.10",
+    "model_format": "generic",
+    "box_uv": true
+  },
+  "resolution": {
+    "width": 64,
+    "height": 64
+  },
+  "textures": [
+    {
+      "name": "default",
+      "folder": "",
+      "namespace": "",
+      "id": "0",
+      "particle": false,
+      "render_mode": "default"
+    }
+  ],
+  "elements": [
+    {
+      "name": "Receiver_Main",
+      "from": [-8, 4, -2],
+      "to": [8, 8, 2],
+      "faces": {
+        "north": {"uv": [0, 0, 16, 4], "texture": 0},
+        "south": {"uv": [0, 0, 16, 4], "texture": 0},
+        "east": {"uv": [0, 0, 4, 4], "texture": 0},
+        "west": {"uv": [0, 0, 4, 4], "texture": 0},
+        "up": {"uv": [0, 0, 16, 4], "texture": 0},
+        "down": {"uv": [0, 0, 16, 4], "texture": 0}
+      }
+    },
+    {
+      "name": "Receiver_Top_Rib",
+      "from": [-8, 8, -0.5],
+      "to": [8, 8.5, 0.5],
+      "faces": {
+        "north": {"uv": [0, 0, 16, 0.5], "texture": 0},
+        "south": {"uv": [0, 0, 16, 0.5], "texture": 0},
+        "east": {"uv": [0, 0, 1, 0.5], "texture": 0},
+        "west": {"uv": [0, 0, 1, 0.5], "texture": 0},
+        "up": {"uv": [0, 0, 16, 1], "texture": 0},
+        "down": {"uv": [0, 0, 16, 1], "texture": 0}
+      }
+    },
+    {
+      "name": "Stock_Main",
+      "from": [-12, 4, -2],
+      "to": [-8, 8, 2],
+      "faces": {
+        "north": {"uv": [0, 0, 4, 4], "texture": 0},
+        "south": {"uv": [0, 0, 4, 4], "texture": 0},
+        "east": {"uv": [0, 0, 4, 4], "texture": 0},
+        "west": {"uv": [0, 0, 4, 4], "texture": 0},
+        "up": {"uv": [0, 0, 4, 4], "texture": 0},
+        "down": {"uv": [0, 0, 4, 4], "texture": 0}
+      }
+    },
+    {
+      "name": "Stock_Buttpad",
+      "from": [-12.5, 4, -2],
+      "to": [-12, 8, 2],
+      "faces": {
+        "north": {"uv": [0, 0, 0.5, 4], "texture": 0},
+        "south": {"uv": [0, 0, 0.5, 4], "texture": 0},
+        "east": {"uv": [0, 0, 4, 4], "texture": 0},
+        "west": {"uv": [0, 0, 4, 4], "texture": 0},
+        "up": {"uv": [0, 0, 0.5, 4], "texture": 0},
+        "down": {"uv": [0, 0, 0.5, 4], "texture": 0}
+      }
+    },
+    {
+      "name": "Barrel_Main",
+      "from": [8, 5, -1],
+      "to": [12, 7, 1],
+      "faces": {
+        "north": {"uv": [0, 0, 4, 2], "texture": 0},
+        "south": {"uv": [0, 0, 4, 2], "texture": 0},
+        "east": {"uv": [0, 0, 2, 2], "texture": 0},
+        "west": {"uv": [0, 0, 2, 2], "texture": 0},
+        "up": {"uv": [0, 0, 4, 2], "texture": 0},
+        "down": {"uv": [0, 0, 4, 2], "texture": 0}
+      }
+    },
+    {
+      "name": "DrumMagazine_Main",
+      "from": [0, -2, -2],
+      "to": [4, 4, 2],
+      "faces": {
+        "north": {"uv": [0, 0, 4, 6], "texture": 0},
+        "south": {"uv": [0, 0, 4, 6], "texture": 0},
+        "east": {"uv": [0, 0, 4, 6], "texture": 0},
+        "west": {"uv": [0, 0, 4, 6], "texture": 0},
+        "up": {"uv": [0, 0, 4, 4], "texture": 0},
+        "down": {"uv": [0, 0, 4, 4], "texture": 0}
+      }
+    },
+    {
+      "name": "DrumMagazine_Detail",
+      "from": [0.5, -1.5, -2.2],
+      "to": [3.5, 3.5, 2.2],
+      "faces": {
+        "north": {"uv": [0, 0, 3, 5], "texture": 0},
+        "south": {"uv": [0, 0, 3, 5], "texture": 0},
+        "east": {"uv": [0, 0, 4.4, 5], "texture": 0},
+        "west": {"uv": [0, 0, 4.4, 5], "texture": 0},
+        "up": {"uv": [0, 0, 3, 4.4], "texture": 0},
+        "down": {"uv": [0, 0, 3, 4.4], "texture": 0}
+      }
+    },
+    {
+      "name": "Grip_Main",
+      "from": [-2, 0, -1],
+      "to": [0, 4, 1],
+      "rotation": {"angle": -22.5, "axis": "z", "origin": [-1, 4, 0]},
+      "faces": {
+        "north": {"uv": [0, 0, 2, 4], "texture": 0},
+        "south": {"uv": [0, 0, 2, 4], "texture": 0},
+        "east": {"uv": [0, 0, 2, 4], "texture": 0},
+        "west": {"uv": [0, 0, 2, 4], "texture": 0},
+        "up": {"uv": [0, 0, 2, 2], "texture": 0},
+        "down": {"uv": [0, 0, 2, 2], "texture": 0}
+      }
+    },
+    {
+      "name": "Grip_Texture",
+      "from": [-1.8, 0.5, -1.1],
+      "to": [-0.2, 3.5, 1.1],
+      "rotation": {"angle": -22.5, "axis": "z", "origin": [-1, 4, 0]},
+      "faces": {
+        "north": {"uv": [0, 0, 1.6, 3], "texture": 0},
+        "south": {"uv": [0, 0, 1.6, 3], "texture": 0},
+        "east": {"uv": [0, 0, 2.2, 3], "texture": 0},
+        "west": {"uv": [0, 0, 2.2, 3], "texture": 0},
+        "up": {"uv": [0, 0, 1.6, 2.2], "texture": 0},
+        "down": {"uv": [0, 0, 1.6, 2.2], "texture": 0}
+      }
+    },
+    {
+      "name": "FrontSight_Base",
+      "from": [11, 7, -0.5],
+      "to": [12, 8, 0.5],
+      "faces": {
+        "north": {"uv": [0, 0, 1, 1], "texture": 0},
+        "south": {"uv": [0, 0, 1, 1], "texture": 0},
+        "east": {"uv": [0, 0, 1, 1], "texture": 0},
+        "west": {"uv": [0, 0, 1, 1], "texture": 0},
+        "up": {"uv": [0, 0, 1, 1], "texture": 0},
+        "down": {"uv": [0, 0, 1, 1], "texture": 0}
+      }
+    },
+    {
+      "name": "FrontSight_Post",
+      "from": [11.4, 8, -0.1],
+      "to": [11.6, 8.5, 0.1],
+      "faces": {
+        "north": {"uv": [0, 0, 0.2, 0.5], "texture": 0},
+        "south": {"uv": [0, 0, 0.2, 0.5], "texture": 0},
+        "east": {"uv": [0, 0, 0.2, 0.5], "texture": 0},
+        "west": {"uv": [0, 0, 0.2, 0.5], "texture": 0},
+        "up": {"uv": [0, 0, 0.2, 0.2], "texture": 0},
+        "down": {"uv": [0, 0, 0.2, 0.2], "texture": 0}
+      }
+    },
+    {
+      "name": "RearSight_Base",
+      "from": [-7, 8.5, -0.5],
+      "to": [-6, 9, 0.5],
+      "faces": {
+        "north": {"uv": [0, 0, 1, 0.5], "texture": 0},
+        "south": {"uv": [0, 0, 1, 0.5], "texture": 0},
+        "east": {"uv": [0, 0, 1, 0.5], "texture": 0},
+        "west": {"uv": [0, 0, 1, 0.5], "texture": 0},
+        "up": {"uv": [0, 0, 1, 1], "texture": 0},
+        "down": {"uv": [0, 0, 1, 1], "texture": 0}
+      }
+    },
+    {
+      "name": "RearSight_Aperture",
+      "from": [-6.8, 9, -0.4],
+      "to": [-6.2, 9.5, 0.4],
+      "faces": {
+        "north": {"uv": [0, 0, 0.6, 0.5], "texture": 0},
+        "south": {"uv": [0, 0, 0.6, 0.5], "texture": 0},
+        "east": {"uv": [0, 0, 0.8, 0.5], "texture": 0},
+        "west": {"uv": [0, 0, 0.8, 0.5], "texture": 0},
+        "up": {"uv": [0, 0, 0.6, 0.8], "texture": 0},
+        "down": {"uv": [0, 0, 0.6, 0.8], "texture": 0}
+      }
+    },
+    {
+      "name": "ChargingHandle_Base",
+      "from": [0, 6, 2],
+      "to": [2, 7, 2.5],
+      "faces": {
+        "north": {"uv": [0, 0, 2, 1], "texture": 0},
+        "south": {"uv": [0, 0, 2, 1], "texture": 0},
+        "east": {"uv": [0, 0, 0.5, 1], "texture": 0},
+        "west": {"uv": [0, 0, 0.5, 1], "texture": 0},
+        "up": {"uv": [0, 0, 2, 0.5], "texture": 0},
+        "down": {"uv": [0, 0, 2, 0.5], "texture": 0}
+      }
+    },
+    {
+      "name": "ChargingHandle_Knob",
+      "from": [0.5, 6.2, 2.5],
+      "to": [1.5, 6.8, 3.5],
+      "faces": {
+        "north": {"uv": [0, 0, 1, 0.6], "texture": 0},
+        "south": {"uv": [0, 0, 1, 0.6], "texture": 0},
+        "east": {"uv": [0, 0, 1, 0.6], "texture": 0},
+        "west": {"uv": [0, 0, 1, 0.6], "texture": 0},
+        "up": {"uv": [0, 0, 1, 1], "texture": 0},
+        "down": {"uv": [0, 0, 1, 1], "texture": 0}
+      }
+    },
+    {
+      "name": "TriggerGuard",
+      "from": [-1, 2, -0.5],
+      "to": [2, 4, 0.5],
+      "faces": {
+        "north": {"uv": [0, 0, 3, 2], "texture": 0},
+        "south": {"uv": [0, 0, 3, 2], "texture": 0},
+        "east": {"uv": [0, 0, 1, 2], "texture": 0},
+        "west": {"uv": [0, 0, 1, 2], "texture": 0},
+        "up": {"uv": [0, 0, 3, 1], "texture": 0},
+        "down": {"uv": [0, 0, 3, 1], "texture": 0}
+      }
+    },
+    {
+      "name": "Trigger",
+      "from": [0.5, 3, -0.2],
+      "to": [1, 4, 0.2],
+      "faces": {
+        "north": {"uv": [0, 0, 0.5, 1], "texture": 0},
+        "south": {"uv": [0, 0, 0.5, 1], "texture": 0},
+        "east": {"uv": [0, 0, 0.4, 1], "texture": 0},
+        "west": {"uv": [0, 0, 0.4, 1], "texture": 0},
+        "up": {"uv": [0, 0, 0.5, 0.4], "texture": 0},
+        "down": {"uv": [0, 0, 0.5, 0.4], "texture": 0}
+      }
+    }
+  ]
+}

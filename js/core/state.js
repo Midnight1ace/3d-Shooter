@@ -1,4 +1,4 @@
-import { Config, GamePhase } from './config.js';
+import { Config, GamePhase, DefaultWeaponId } from './config.js';
 
 export const state = {
     phase: GamePhase.LOADING,
@@ -27,6 +27,6 @@ export const state = {
     screenShakeEnabled: true,
     hitStopEnabled: true,
     freeAmmoUsed: false,
-    currentWeaponId: 'rifle-guardian',
+    currentWeaponId: DefaultWeaponId,
     debugMode: false
 };

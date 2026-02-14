@@ -7,6 +7,8 @@ import { createInputManager } from './systems/InputManager.js';
 import { createUIController } from './systems/UIController.js';
 import { createWeaponSystem } from './systems/WeaponSystem.js';
 import { createEntityManager } from './systems/EntityManager.js';
+let RAPIER = null;
+let PathfindingCtor = null;
 
 /**
  * 3D Shooter Game - Fixed & Improved Version
@@ -20,6 +22,10 @@ let currentLayout = null;
 let upgradeOptions = [];
 let ammoCrateGeometry = null;
 let ammoCrateMaterial = null;
+let physics = null;
+let pathfinding = null;
+const NAV_ZONE_ID = 'arena';
+const WORLD_BOUNDARY = 90;
 
 const audio = createAudioManager();
 let weaponSystem;
@@ -111,6 +117,254 @@ const shakeOffset = refs.shakeOffset;
 
 ui.startLoading();
 
+async function loadExternalLibraries() {
+    const results = await Promise.allSettled([
+        import('https://cdn.skypack.dev/@dimforge/rapier3d-compat@0.19.0'),
+        import('https://cdn.skypack.dev/three-pathfinding@1.3.0')
+    ]);
+    if (results[0].status === 'fulfilled') {
+        const mod = results[0].value;
+        RAPIER = mod?.default || mod;
+    } else {
+        console.warn('Rapier failed to load.', results[0].reason);
+        RAPIER = null;
+    }
+
+    if (results[1].status === 'fulfilled') {
+        const mod = results[1].value;
+        PathfindingCtor = mod?.Pathfinding
+            || mod?.default?.Pathfinding
+            || mod?.default
+            || mod;
+    } else {
+        console.warn('three-pathfinding failed to load.', results[1].reason);
+        PathfindingCtor = null;
+    }
+}
+
+async function initPhysics() {
+    if (!RAPIER) {
+        refs.physics = null;
+        return false;
+    }
+    await RAPIER.init();
+    const world = new RAPIER.World({ x: 0, y: 0, z: 0 });
+
+    const radius = Math.max(0.35, Config.playerRadius * 0.5);
+    const halfHeight = Math.max(0.2, (Config.playerHeight * 0.5) - radius);
+    const playerBodyDesc = RAPIER.RigidBodyDesc.dynamic()
+        .setTranslation(0, Config.playerHeight, 0)
+        .setLinearDamping(8)
+        .setAngularDamping(10);
+    if (playerBodyDesc.lockRotations) {
+        playerBodyDesc.lockRotations();
+    }
+    const playerBody = world.createRigidBody(playerBodyDesc);
+    const playerColliderDesc = RAPIER.ColliderDesc.capsule(halfHeight, radius)
+        .setFriction(1.1)
+        .setRestitution(0);
+    const playerCollider = world.createCollider(playerColliderDesc, playerBody);
+
+    physics = {
+        rapier: RAPIER,
+        world,
+        playerBody,
+        playerCollider
+    };
+    refs.physics = physics;
+    return true;
+}
+
+function resetPlayerPhysics() {
+    if (!physics?.playerBody) return;
+    physics.playerBody.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    physics.playerBody.setTranslation({ x: 0, y: Config.playerHeight, z: 0 }, true);
+}
+
+function stepPhysics(delta) {
+    if (!physics?.world) return;
+    try {
+        if (physics.world.integrationParameters) {
+            physics.world.integrationParameters.dt = delta;
+        } else if (physics.world.timestep !== undefined) {
+            physics.world.timestep = delta;
+        }
+        physics.world.step();
+    } catch (error) {
+        console.warn('Physics step failed. Disabling physics.', error);
+        physics = null;
+        refs.physics = null;
+    }
+}
+
+function syncPlayerFromPhysics() {
+    if (!physics?.playerBody) return;
+    const pos = physics.playerBody.translation();
+    const clampedX = Math.max(-WORLD_BOUNDARY, Math.min(WORLD_BOUNDARY, pos.x));
+    const clampedZ = Math.max(-WORLD_BOUNDARY, Math.min(WORLD_BOUNDARY, pos.z));
+    const bodyY = Config.playerHeight;
+    if (clampedX !== pos.x || clampedZ !== pos.z || pos.y !== bodyY) {
+        physics.playerBody.setTranslation({ x: clampedX, y: bodyY, z: clampedZ }, true);
+    }
+    camera.position.set(clampedX, bodyY + (player?.viewOffsetY || 0), clampedZ);
+}
+
+function getColliderHandle(collider) {
+    if (!collider) return null;
+    return typeof collider === 'number' ? collider : collider.handle;
+}
+
+function areCollidersOverlapping(world, colliderA, colliderB) {
+    if (!world || colliderA == null || colliderB == null) return false;
+    const handleA = getColliderHandle(colliderA);
+    const handleB = getColliderHandle(colliderB);
+    if (handleA == null || handleB == null) return false;
+    if (world.intersectionPair) {
+        return world.intersectionPair(handleA, handleB);
+    }
+    if (world.contactPair) {
+        return Boolean(world.contactPair(handleA, handleB));
+    }
+    if (world.intersectionsWith) {
+        let hit = false;
+        world.intersectionsWith(handleA, (other) => {
+            if (other === handleB) {
+                hit = true;
+                return false;
+            }
+            return true;
+        });
+        return hit;
+    }
+    return false;
+}
+
+function createObstacleCollider(mesh) {
+    if (!mesh || !physics?.world) return;
+    const box = new THREE.Box3().setFromObject(mesh);
+    mesh.userData.boundingBox = box;
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    const half = size.multiplyScalar(0.5);
+    const colliderDesc = physics.rapier.ColliderDesc.cuboid(half.x, half.y, half.z)
+        .setTranslation(mesh.position.x, mesh.position.y, mesh.position.z)
+        .setFriction(1.3)
+        .setRestitution(0);
+    if (colliderDesc.setRotation) {
+        colliderDesc.setRotation({
+            x: mesh.quaternion.x,
+            y: mesh.quaternion.y,
+            z: mesh.quaternion.z,
+            w: mesh.quaternion.w
+        });
+    }
+    const collider = physics.world.createCollider(colliderDesc);
+    mesh.userData.colliderHandle = getColliderHandle(collider);
+}
+
+function removeObstacleCollider(mesh) {
+    if (!mesh || !physics?.world) return;
+    const handle = getColliderHandle(mesh.userData.colliderHandle);
+    if (handle != null) {
+        physics.world.removeCollider(handle, true);
+    }
+    mesh.userData.colliderHandle = null;
+}
+
+function createPickupCollider(pickup) {
+    if (!pickup || !physics?.world) return;
+    const size = 0.45;
+    const colliderDesc = physics.rapier.ColliderDesc.cuboid(size, size, size)
+        .setTranslation(pickup.position.x, pickup.position.y, pickup.position.z);
+    if (colliderDesc.setSensor) {
+        colliderDesc.setSensor(true);
+    }
+    const collider = physics.world.createCollider(colliderDesc);
+    pickup.userData.colliderHandle = getColliderHandle(collider);
+}
+
+function removePickupCollider(pickup) {
+    if (!pickup || !physics?.world) return;
+    const handle = getColliderHandle(pickup.userData.colliderHandle);
+    if (handle != null) {
+        physics.world.removeCollider(handle, true);
+    }
+    pickup.userData.colliderHandle = null;
+}
+
+function buildNavMeshGeometry() {
+    const halfSize = Config.navMeshSize;
+    const cellSize = Config.navMeshCellSize;
+    const padding = Config.navMeshPadding;
+    const positions = [];
+    const obstacleBoxes = collections.mapObstacles.map((mesh) => {
+        const bounds = mesh.userData.boundingBox || new THREE.Box3().setFromObject(mesh);
+        mesh.userData.boundingBox = bounds;
+        return {
+            minX: bounds.min.x - padding,
+            maxX: bounds.max.x + padding,
+            minZ: bounds.min.z - padding,
+            maxZ: bounds.max.z + padding
+        };
+    });
+
+    for (let x = -halfSize; x < halfSize; x += cellSize) {
+        for (let z = -halfSize; z < halfSize; z += cellSize) {
+            const cx = x + cellSize * 0.5;
+            const cz = z + cellSize * 0.5;
+            let blocked = false;
+            for (let i = 0; i < obstacleBoxes.length; i++) {
+                const box = obstacleBoxes[i];
+                if (cx >= box.minX && cx <= box.maxX && cz >= box.minZ && cz <= box.maxZ) {
+                    blocked = true;
+                    break;
+                }
+            }
+            if (blocked) continue;
+            const x1 = x + cellSize;
+            const z1 = z + cellSize;
+            positions.push(
+                x, 0, z,
+                x1, 0, z,
+                x1, 0, z1,
+                x, 0, z,
+                x1, 0, z1,
+                x, 0, z1
+            );
+        }
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.computeVertexNormals();
+    return geometry;
+}
+
+function rebuildNavMesh() {
+    if (!pathfinding) return;
+    const zoneBuilder = PathfindingCtor?.createZone || pathfinding.createZone;
+    if (!zoneBuilder) return;
+    try {
+        const geometry = buildNavMeshGeometry();
+        const zone = zoneBuilder(geometry);
+        pathfinding.setZoneData(NAV_ZONE_ID, zone);
+        refs.pathfinding = pathfinding;
+        refs.navZoneId = NAV_ZONE_ID;
+        entityManager?.setNavigation?.(pathfinding, NAV_ZONE_ID);
+    } catch (error) {
+        console.warn('NavMesh build failed, falling back to direct movement.', error);
+    }
+}
+
+function releaseParticle(particle) {
+    if (!particle) return;
+    const type = particle.userData?.poolType;
+    if (!type || !collections.particlePools[type]) return;
+    particle.visible = false;
+    refs.scene?.remove(particle);
+    collections.particlePools[type].push(particle);
+}
+
 function getAmmoCrateGeometry() {
     if (!ammoCrateGeometry) {
         ammoCrateGeometry = new THREE.BoxGeometry(0.8, 0.8, 0.8);
@@ -145,13 +399,45 @@ function spawnAmmoCrate(position) {
     };
     refs.scene.add(crate);
     collections.pickups.push(crate);
+    createPickupCollider(crate);
 }
 
 function clearPickups() {
     collections.pickups.forEach((pickup) => {
-        if (pickup) refs.scene?.remove(pickup);
+        if (pickup) {
+            removePickupCollider(pickup);
+            refs.scene?.remove(pickup);
+        }
     });
     collections.pickups = [];
+}
+
+function clearEnemies() {
+    collections.enemies.forEach((enemy) => {
+        const colliderHandle = getColliderHandle(enemy?.collider);
+        if (colliderHandle != null && physics?.world) {
+            physics.world.removeCollider(colliderHandle, true);
+        }
+        if (enemy?.body && physics?.world) {
+            const bodyHandle = typeof enemy.body === 'number' ? enemy.body : enemy.body.handle;
+            if (bodyHandle != null) {
+                physics.world.removeRigidBody(bodyHandle);
+            }
+        }
+        if (enemy?.mesh) {
+            refs.scene?.remove(enemy.mesh);
+        }
+    });
+    collections.enemies = [];
+    ui.updateHUD();
+}
+
+function clearActiveParticles() {
+    for (let i = collections.particles.length - 1; i >= 0; i--) {
+        const particle = collections.particles[i];
+        releaseParticle(particle);
+    }
+    collections.particles = [];
 }
 
 
@@ -217,74 +503,106 @@ function toggleHitStop() {
 // Initialize the Game
 async function init() {
     console.log('Initializing 3D Shooter Game...');
+    try {
+        await loadExternalLibraries();
 
-    // Create Scene
-    scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x87CEEB);
-    scene.fog = new THREE.Fog(0x87CEEB, 20, 150);
-    
-    // Create Camera
-    camera = new THREE.PerspectiveCamera(
-        Config.fov,
-        window.innerWidth / window.innerHeight,
-        Config.near,
-        Config.far
-    );
-    camera.position.set(0, Config.playerHeight, 0);
-    scene.add(camera);
+        // Create Scene
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87CEEB);
+        scene.fog = new THREE.Fog(0x87CEEB, 20, 150);
+        
+        // Create Camera
+        camera = new THREE.PerspectiveCamera(
+            Config.fov,
+            window.innerWidth / window.innerHeight,
+            Config.near,
+            Config.far
+        );
+        camera.position.set(0, Config.playerHeight, 0);
+        scene.add(camera);
 
-    // Create Renderer
-    state.lowPowerMode = window.matchMedia('(prefers-reduced-motion: reduce)').matches ||
-        (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4);
-    renderer = new THREE.WebGLRenderer({
-        canvas: dom.gameCanvas,
-        antialias: true
-    });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, state.lowPowerMode ? 1 : 1.5));
-    renderer.outputEncoding = THREE.sRGBEncoding;
-    renderer.shadowMap.enabled = !state.lowPowerMode;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    
-    // Create Clock
-    clock = new THREE.Clock();
-    refs.scene = scene;
-    refs.camera = camera;
-    refs.renderer = renderer;
-    refs.clock = clock;
-    
-    // Setup Lighting - Improved
-    setupLighting();
-    
-    // Create Environment - Improved
-    createEnvironment();
+        // Create Renderer
+        state.lowPowerMode = window.matchMedia('(prefers-reduced-motion: reduce)').matches ||
+            (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4);
+        renderer = new THREE.WebGLRenderer({
+            canvas: dom.gameCanvas,
+            antialias: true
+        });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, state.lowPowerMode ? 1 : 1.5));
+        renderer.outputEncoding = THREE.sRGBEncoding;
+        renderer.shadowMap.enabled = !state.lowPowerMode;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        
+        // Create Clock
+        clock = new THREE.Clock();
+        refs.scene = scene;
+        refs.camera = camera;
+        refs.renderer = renderer;
+        refs.clock = clock;
+        refs.shieldUniforms = {
+            uTime: { value: 0 },
+            uColor: { value: new THREE.Color(0x3df2ff) }
+        };
+        if (typeof PathfindingCtor === 'function') {
+            pathfinding = new PathfindingCtor();
+            refs.pathfinding = pathfinding;
+            refs.navZoneId = NAV_ZONE_ID;
+        } else {
+            pathfinding = null;
+        }
 
-    // Create Player
-    createPlayer();
+        let physicsReady = false;
+        try {
+            physicsReady = await initPhysics();
+        } catch (error) {
+            console.warn('Physics init failed.', error);
+            physicsReady = false;
+            refs.physics = null;
+        }
+        if (!physicsReady) {
+            console.warn('Physics unavailable. Using fallback collisions.');
+        }
+        
+        // Setup Lighting - Improved
+        setupLighting();
+        
+        // Create Environment - Improved
+        createEnvironment();
 
-    // Create Weapon
-    weaponSystem.createWeapon();
+        // Create Player
+        createPlayer();
 
-    // Load animated enemy model (if available)
-    entityManager.loadEnemyModel();
-    
-    // Setup Controls
-    setupControls();
-    
-    // Setup UI
-    ui.setupUI();
-    
-    // Handle Window Resize
-    window.addEventListener('resize', onWindowResize);
-    
-    // Hide Loading Screen
-    ui.finishLoading();
-    
-    // Show Start Screen
-    state.phase = GamePhase.START;
-    dom.startScreen?.classList.remove('hidden');
-    
-    console.log('Game initialized successfully!');
+        // Create Weapon
+        weaponSystem.createWeapon();
+
+        // Load animated enemy model (if available)
+        entityManager.loadEnemyModel();
+        
+        // Setup Controls
+        setupControls();
+        
+        // Setup UI
+        ui.setupUI();
+        
+        // Handle Window Resize
+        window.addEventListener('resize', onWindowResize);
+        
+        // Hide Loading Screen
+        ui.finishLoading();
+        
+        // Show Start Screen
+        state.phase = GamePhase.START;
+        dom.startScreen?.classList.remove('hidden');
+        
+        console.log('Game initialized successfully!');
+    } catch (error) {
+        console.error('Failed to initialize game:', error);
+        ui.finishLoading();
+        state.phase = GamePhase.START;
+        dom.startScreen?.classList.remove('hidden');
+        ui.showPrompt('Init failed. Check console for details.', 4000);
+    }
 }
 
 // Setup Lighting - Enhanced
@@ -327,12 +645,17 @@ function loadEnemyModel() {
 
 function addMapObject(mesh) {
     mesh.userData.isObstacle = true;
+    if (!mesh.userData.boundingBox) {
+        mesh.userData.boundingBox = new THREE.Box3().setFromObject(mesh);
+    }
     collections.mapObstacles.push(mesh);
     scene.add(mesh);
+    createObstacleCollider(mesh);
 }
 
 function clearMapObstacles() {
     collections.mapObstacles.forEach((obj) => {
+        removeObstacleCollider(obj);
         scene.remove(obj);
         if (obj.geometry) {
             obj.geometry.dispose();
@@ -377,6 +700,7 @@ function regenerateMap() {
             createLayoutLanes(castShadow, density);
             break;
     }
+    rebuildNavMesh();
 }
 
 // Create Environment - Enhanced
@@ -580,7 +904,8 @@ function createPlayer() {
         isSprinting: false,
         canShoot: true,
         yaw: 0,
-        pitch: 0
+        pitch: 0,
+        viewOffsetY: 0
     };
     refs.player = player;
 }
@@ -622,7 +947,14 @@ function startWave() {
 }
 
 function updateEnemies(delta) {
-    entityManager.updateEnemies(delta);
+    try {
+        entityManager.updateEnemies(delta, state.timeScale);
+    } catch (error) {
+        console.warn('Enemy update failed. Disabling navmesh.', error);
+        entityManager.setNavigation?.(null, null);
+        pathfinding = null;
+        refs.pathfinding = null;
+    }
 }
 
 // Take Damage - Fixed
@@ -649,9 +981,13 @@ function takeDamage(amount, sourcePosition) {
     }, 300);
     
     if (state.screenShakeEnabled) {
-        camera.position.y -= 0.04;
+        if (player) {
+            player.viewOffsetY = -0.04;
+        }
         setTimeout(() => {
-            camera.position.y = Config.playerHeight;
+            if (player) {
+                player.viewOffsetY = 0;
+            }
         }, 50);
     }
     
@@ -844,15 +1180,17 @@ function startGame() {
     weaponSystem.cancelReload();
     
     // Clear existing enemies
-    collections.enemies.forEach((enemy) => scene.remove(enemy.mesh));
-    collections.enemies = [];
+    clearEnemies();
     clearPickups();
+    clearActiveParticles();
     
     // Reset camera
     camera.position.set(0, Config.playerHeight, 0);
     camera.rotation.set(0, 0, 0);
     player.yaw = 0;
     player.pitch = 0;
+    player.viewOffsetY = 0;
+    resetPlayerPhysics();
     
     ui.hideUpgradeScreen();
     ui.updateHUD();
@@ -911,15 +1249,17 @@ function restartGame() {
     weaponSystem.cancelReload();
     
     // Clear existing enemies
-    collections.enemies.forEach((enemy) => scene.remove(enemy.mesh));
-    collections.enemies = [];
+    clearEnemies();
     clearPickups();
+    clearActiveParticles();
     
     // Reset camera
     camera.position.set(0, Config.playerHeight, 0);
     camera.rotation.set(0, 0, 0);
     player.yaw = 0;
     player.pitch = 0;
+    player.viewOffsetY = 0;
+    resetPlayerPhysics();
     
     ui.hideUpgradeScreen();
     ui.updateHUD();
@@ -961,7 +1301,7 @@ function onWindowResize() {
 
 // Player Movement
 function updatePlayer(delta) {
-    if (!state.isPointerLocked || state.phase !== GamePhase.PLAYING) return;
+    if (state.phase !== GamePhase.PLAYING) return;
     
     player.velocity.set(0, 0, 0);
     player.direction.set(0, 0, 0);
@@ -991,20 +1331,21 @@ function updatePlayer(delta) {
         const baseSpeed = input.keys.shift
             ? Config.playerSpeed * Config.playerSprintMultiplier * state.moveSpeedMultiplier
             : Config.playerSpeed * state.moveSpeedMultiplier;
-        const speed = baseSpeed * (delta * 60);
+        const speed = baseSpeed * 60;
         player.velocity.copy(player.direction).multiplyScalar(speed);
     }
-    
-    // Apply movement with collision
-    const desiredPosition = camera.position.clone().add(player.velocity);
-    desiredPosition.y = Config.playerHeight;
-    const resolvedPosition = resolvePlayerCollisions(desiredPosition);
-    camera.position.copy(resolvedPosition);
-    
-    // Boundary check
-    const boundary = 90;
-    camera.position.x = Math.max(-boundary, Math.min(boundary, camera.position.x));
-    camera.position.z = Math.max(-boundary, Math.min(boundary, camera.position.z));
+
+    const body = refs.physics?.playerBody;
+    if (body) {
+        body.setLinvel({ x: player.velocity.x, y: 0, z: player.velocity.z }, true);
+    } else {
+        const desiredPosition = camera.position.clone().addScaledVector(player.velocity, delta);
+        desiredPosition.y = Config.playerHeight;
+        const resolvedPosition = resolvePlayerCollisions(desiredPosition);
+        camera.position.copy(resolvedPosition);
+        camera.position.x = Math.max(-WORLD_BOUNDARY, Math.min(WORLD_BOUNDARY, camera.position.x));
+        camera.position.z = Math.max(-WORLD_BOUNDARY, Math.min(WORLD_BOUNDARY, camera.position.z));
+    }
     
     const activeWeapon = weaponSystem.getWeapon();
     const weaponMesh = activeWeapon?.mesh;
@@ -1039,28 +1380,30 @@ function resolvePlayerCollisions(position) {
     for (let i = 0; i < collections.mapObstacles.length; i++) {
         const obstacle = collections.mapObstacles[i];
         if (!obstacle) continue;
-        const box = new THREE.Box3().setFromObject(obstacle);
-        box.min.x -= radius;
-        box.max.x += radius;
-        box.min.z -= radius;
-        box.max.z += radius;
+        const box = obstacle.userData.boundingBox || new THREE.Box3().setFromObject(obstacle);
+        obstacle.userData.boundingBox = box;
+        const expanded = box.clone();
+        expanded.min.x -= radius;
+        expanded.max.x += radius;
+        expanded.min.z -= radius;
+        expanded.max.z += radius;
 
-        if (resolved.x < box.min.x || resolved.x > box.max.x || resolved.z < box.min.z || resolved.z > box.max.z) {
+        if (resolved.x < expanded.min.x || resolved.x > expanded.max.x || resolved.z < expanded.min.z || resolved.z > expanded.max.z) {
             continue;
         }
 
-        if (playerY < box.min.y - 1 || playerY > box.max.y + 1) {
+        if (playerY < expanded.min.y - 1 || playerY > expanded.max.y + 1) {
             continue;
         }
 
-        const overlapX = Math.min(box.max.x - resolved.x, resolved.x - box.min.x);
-        const overlapZ = Math.min(box.max.z - resolved.z, resolved.z - box.min.z);
+        const overlapX = Math.min(expanded.max.x - resolved.x, resolved.x - expanded.min.x);
+        const overlapZ = Math.min(expanded.max.z - resolved.z, resolved.z - expanded.min.z);
         if (overlapX < overlapZ) {
-            const centerX = (box.min.x + box.max.x) * 0.5;
-            resolved.x = resolved.x < centerX ? box.min.x : box.max.x;
+            const centerX = (expanded.min.x + expanded.max.x) * 0.5;
+            resolved.x = resolved.x < centerX ? expanded.min.x : expanded.max.x;
         } else {
-            const centerZ = (box.min.z + box.max.z) * 0.5;
-            resolved.z = resolved.z < centerZ ? box.min.z : box.max.z;
+            const centerZ = (expanded.min.z + expanded.max.z) * 0.5;
+            resolved.z = resolved.z < centerZ ? expanded.min.z : expanded.max.z;
         }
     }
 
@@ -1086,10 +1429,17 @@ function animate() {
     const scaledDelta = delta * state.timeScale;
     
     updatePlayer(delta);
-    updateEnemies(scaledDelta);
+    updateEnemies(delta);
+    stepPhysics(delta);
+    entityManager.syncEnemyBodies();
+    syncPlayerFromPhysics();
     updatePickups(scaledDelta);
     updateParticles(scaledDelta);
     weaponSystem.updateReloadIndicator();
+
+    if (refs.shieldUniforms) {
+        refs.shieldUniforms.uTime.value = clock.getElapsedTime();
+    }
 
     const shake = getCameraShakeOffset(delta);
     camera.position.add(shake);
@@ -1099,10 +1449,10 @@ function animate() {
 
 // Particle Animation
 function updateParticles(delta) {
-    if (!window.hitParticles) return;
+    if (!collections.particles.length) return;
     
-    for (let i = window.hitParticles.length - 1; i >= 0; i--) {
-        const particle = window.hitParticles[i];
+    for (let i = collections.particles.length - 1; i >= 0; i--) {
+        const particle = collections.particles[i];
         
         // Update position
         particle.position.addScaledVector(particle.userData.velocity, delta);
@@ -1117,10 +1467,8 @@ function updateParticles(delta) {
         
         // Remove dead particles
         if (particle.userData.lifetime <= 0 || particle.position.y < 0) {
-            scene.remove(particle);
-            particle.geometry.dispose();
-            particle.material.dispose();
-            window.hitParticles.splice(i, 1);
+            collections.particles.splice(i, 1);
+            releaseParticle(particle);
         }
     }
 }
@@ -1129,6 +1477,8 @@ function updatePickups(delta) {
     if (!collections.pickups.length) return;
     const currentWeapon = weaponSystem.getWeapon();
     if (!currentWeapon) return;
+    const world = refs.physics?.world || null;
+    const playerCollider = refs.physics?.playerCollider || null;
     for (let i = collections.pickups.length - 1; i >= 0; i--) {
         const pickup = collections.pickups[i];
         if (!pickup) {
@@ -1136,8 +1486,14 @@ function updatePickups(delta) {
             continue;
         }
         pickup.rotation.y += delta * 1.5;
-        const distance = pickup.position.distanceTo(camera.position);
-        if (distance <= 2.2) {
+        let shouldPickup = false;
+        if (world && playerCollider && pickup.userData?.colliderHandle != null) {
+            shouldPickup = areCollidersOverlapping(world, playerCollider, pickup.userData.colliderHandle);
+        } else {
+            const distance = pickup.position.distanceTo(camera.position);
+            shouldPickup = distance <= 2.2;
+        }
+        if (shouldPickup) {
             const beforeAmmo = state.reserveAmmo;
             const addAmount = Math.max(1, Math.round(state.maxAmmo * (pickup.userData.amountMags || 1)));
             state.reserveAmmo = Math.min(currentWeapon.reserveMax, state.reserveAmmo + addAmount);
@@ -1148,6 +1504,7 @@ function updatePickups(delta) {
             } else {
                 ui.showPrompt('Ammo full', 800);
             }
+            removePickupCollider(pickup);
             refs.scene.remove(pickup);
             collections.pickups.splice(i, 1);
         }

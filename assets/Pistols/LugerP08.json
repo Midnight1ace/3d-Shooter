@@ -1,0 +1,186 @@
+{
+  "meta": {
+    "format_version": "4.10",
+    "model_format": "generic",
+    "box_uv": true
+  },
+  "resolution": {
+    "width": 64,
+    "height": 64
+  },
+  "textures": [
+    {
+      "name": "default",
+      "folder": "",
+      "namespace": "",
+      "id": "0",
+      "particle": false,
+      "render_mode": "default"
+    }
+  ],
+  "elements": [
+    {
+      "name": "Barrel",
+      "from": [0, 5, -0.5],
+      "to": [6, 6, 0.5],
+      "faces": {
+        "north": {"uv": [0, 0, 6, 1], "texture": 0},
+        "south": {"uv": [0, 0, 6, 1], "texture": 0},
+        "east": {"uv": [0, 0, 1, 1], "texture": 0},
+        "west": {"uv": [0, 0, 1, 1], "texture": 0},
+        "up": {"uv": [0, 0, 6, 1], "texture": 0},
+        "down": {"uv": [0, 0, 6, 1], "texture": 0}
+      }
+    },
+    {
+      "name": "FrontSight",
+      "from": [5.5, 6, -0.2],
+      "to": [6, 6.5, 0.2],
+      "faces": {
+        "north": {"uv": [0, 0, 0.5, 0.5], "texture": 0},
+        "south": {"uv": [0, 0, 0.5, 0.5], "texture": 0},
+        "east": {"uv": [0, 0, 0.4, 0.5], "texture": 0},
+        "west": {"uv": [0, 0, 0.4, 0.5], "texture": 0},
+        "up": {"uv": [0, 0, 0.5, 0.4], "texture": 0},
+        "down": {"uv": [0, 0, 0.5, 0.4], "texture": 0}
+      }
+    },
+    {
+      "name": "Frame",
+      "from": [-4, 4, -1],
+      "to": [0, 6, 1],
+      "faces": {
+        "north": {"uv": [0, 0, 4, 2], "texture": 0},
+        "south": {"uv": [0, 0, 4, 2], "texture": 0},
+        "east": {"uv": [0, 0, 2, 2], "texture": 0},
+        "west": {"uv": [0, 0, 2, 2], "texture": 0},
+        "up": {"uv": [0, 0, 4, 2], "texture": 0},
+        "down": {"uv": [0, 0, 4, 2], "texture": 0}
+      }
+    },
+    {
+      "name": "ToggleLockFront",
+      "from": [-2, 6, -0.5],
+      "to": [0, 6.5, 0.5],
+      "faces": {
+        "north": {"uv": [0, 0, 2, 0.5], "texture": 0},
+        "south": {"uv": [0, 0, 2, 0.5], "texture": 0},
+        "east": {"uv": [0, 0, 1, 0.5], "texture": 0},
+        "west": {"uv": [0, 0, 1, 0.5], "texture": 0},
+        "up": {"uv": [0, 0, 2, 1], "texture": 0},
+        "down": {"uv": [0, 0, 2, 1], "texture": 0}
+      }
+    },
+    {
+      "name": "ToggleLockRear",
+      "from": [-3, 6, -0.5],
+      "to": [-2, 7, 0.5],
+      "rotation": {
+        "angle": 22.5,
+        "axis": "z",
+        "origin": [-2, 6, 0]
+      },
+      "faces": {
+        "north": {"uv": [0, 0, 1, 1], "texture": 0},
+        "south": {"uv": [0, 0, 1, 1], "texture": 0},
+        "east": {"uv": [0, 0, 1, 1], "texture": 0},
+        "west": {"uv": [0, 0, 1, 1], "texture": 0},
+        "up": {"uv": [0, 0, 1, 1], "texture": 0},
+        "down": {"uv": [0, 0, 1, 1], "texture": 0}
+      }
+    },
+    {
+      "name": "ToggleKnobs",
+      "from": [-3.2, 6.5, -0.8],
+      "to": [-2.2, 7.5, 0.8],
+      "rotation": {
+        "angle": 22.5,
+        "axis": "z",
+        "origin": [-2, 6, 0]
+      },
+      "faces": {
+        "north": {"uv": [0, 0, 1, 1], "texture": 0},
+        "south": {"uv": [0, 0, 1, 1], "texture": 0},
+        "east": {"uv": [0, 0, 1.6, 1], "texture": 0},
+        "west": {"uv": [0, 0, 1.6, 1], "texture": 0},
+        "up": {"uv": [0, 0, 1, 1.6], "texture": 0},
+        "down": {"uv": [0, 0, 1, 1.6], "texture": 0}
+      }
+    },
+    {
+      "name": "Grip",
+      "from": [-4, 0, -1],
+      "to": [-2, 5, 1],
+      "rotation": {
+        "angle": -45,
+        "axis": "z",
+        "origin": [-3, 5, 0]
+      },
+      "faces": {
+        "north": {"uv": [0, 0, 2, 5], "texture": 0},
+        "south": {"uv": [0, 0, 2, 5], "texture": 0},
+        "east": {"uv": [0, 0, 2, 5], "texture": 0},
+        "west": {"uv": [0, 0, 2, 5], "texture": 0},
+        "up": {"uv": [0, 0, 2, 2], "texture": 0},
+        "down": {"uv": [0, 0, 2, 2], "texture": 0}
+      }
+    },
+    {
+      "name": "TriggerGuard",
+      "from": [-2, 3, -0.5],
+      "to": [0, 4, 0.5],
+      "faces": {
+        "north": {"uv": [0, 0, 2, 1], "texture": 0},
+        "south": {"uv": [0, 0, 2, 1], "texture": 0},
+        "east": {"uv": [0, 0, 1, 1], "texture": 0},
+        "west": {"uv": [0, 0, 1, 1], "texture": 0},
+        "up": {"uv": [0, 0, 2, 1], "texture": 0},
+        "down": {"uv": [0, 0, 2, 1], "texture": 0}
+      }
+    },
+    {
+      "name": "Trigger",
+      "from": [-1.5, 3.5, -0.2],
+      "to": [-1, 4.5, 0.2],
+      "faces": {
+        "north": {"uv": [0, 0, 0.5, 1], "texture": 0},
+        "south": {"uv": [0, 0, 0.5, 1], "texture": 0},
+        "east": {"uv": [0, 0, 0.4, 1], "texture": 0},
+        "west": {"uv": [0, 0, 0.4, 1], "texture": 0},
+        "up": {"uv": [0, 0, 0.5, 0.4], "texture": 0},
+        "down": {"uv": [0, 0, 0.5, 0.4], "texture": 0}
+      }
+    },
+    {
+      "name": "RearSight",
+      "from": [-4, 6, -0.2],
+      "to": [-3.5, 6.5, 0.2],
+      "faces": {
+        "north": {"uv": [0, 0, 0.5, 0.5], "texture": 0},
+        "south": {"uv": [0, 0, 0.5, 0.5], "texture": 0},
+        "east": {"uv": [0, 0, 0.4, 0.5], "texture": 0},
+        "west": {"uv": [0, 0, 0.4, 0.5], "texture": 0},
+        "up": {"uv": [0, 0, 0.5, 0.4], "texture": 0},
+        "down": {"uv": [0, 0, 0.5, 0.4], "texture": 0}
+      }
+    },
+    {
+      "name": "Magazine",
+      "from": [-3.5, -1, -0.5],
+      "to": [-2.5, 0, 0.5],
+       "rotation": {
+        "angle": -45,
+        "axis": "z",
+        "origin": [-3, 5, 0]
+      },
+      "faces": {
+        "north": {"uv": [0, 0, 1, 1], "texture": 0},
+        "south": {"uv": [0, 0, 1, 1], "texture": 0},
+        "east": {"uv": [0, 0, 1, 1], "texture": 0},
+        "west": {"uv": [0, 0, 1, 1], "texture": 0},
+        "up": {"uv": [0, 0, 1, 1], "texture": 0},
+        "down": {"uv": [0, 0, 1, 1], "texture": 0}
+      }
+    }
+  ]
+}

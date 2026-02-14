@@ -1,0 +1,182 @@
+{
+  "meta": {
+    "format_version": "4.10",
+    "model_format": "generic",
+    "box_uv": true
+  },
+  "resolution": {
+    "width": 64,
+    "height": 64
+  },
+  "textures": [
+    {
+      "name": "default",
+      "folder": "",
+      "namespace": "",
+      "id": "0",
+      "particle": false,
+      "render_mode": "default"
+    }
+  ],
+  "elements": [
+    {
+      "name": "Stock_Main",
+      "from": [-8, 2, -1.5],
+      "to": [0, 5, 1.5],
+      "rotation": {"angle": -22.5, "axis": "z", "origin": [0, 5, 0]},
+      "faces": {
+        "north": {"uv": [0, 0, 8, 3], "texture": 0},
+        "south": {"uv": [0, 0, 8, 3], "texture": 0},
+        "east": {"uv": [0, 0, 3, 3], "texture": 0},
+        "west": {"uv": [0, 0, 3, 3], "texture": 0},
+        "up": {"uv": [0, 0, 8, 3], "texture": 0},
+        "down": {"uv": [0, 0, 8, 3], "texture": 0}
+      }
+    },
+    {
+      "name": "Stock_Buttpad",
+      "from": [-8.5, 2, -1.5],
+      "to": [-8, 5, 1.5],
+      "rotation": {"angle": -22.5, "axis": "z", "origin": [0, 5, 0]},
+      "faces": {
+        "north": {"uv": [0, 0, 0.5, 3], "texture": 0},
+        "south": {"uv": [0, 0, 0.5, 3], "texture": 0},
+        "east": {"uv": [0, 0, 3, 3], "texture": 0},
+        "west": {"uv": [0, 0, 3, 3], "texture": 0},
+        "up": {"uv": [0, 0, 0.5, 3], "texture": 0},
+        "down": {"uv": [0, 0, 0.5, 3], "texture": 0}
+      }
+    },
+    {
+      "name": "Receiver_Main",
+      "from": [0, 4, -1.5],
+      "to": [4, 6, 1.5],
+      "faces": {
+        "north": {"uv": [0, 0, 4, 2], "texture": 0},
+        "south": {"uv": [0, 0, 4, 2], "texture": 0},
+        "east": {"uv": [0, 0, 3, 2], "texture": 0},
+        "west": {"uv": [0, 0, 3, 2], "texture": 0},
+        "up": {"uv": [0, 0, 4, 3], "texture": 0},
+        "down": {"uv": [0, 0, 4, 3], "texture": 0}
+      }
+    },
+    {
+      "name": "Receiver_BreakLever",
+      "from": [0.5, 6, -0.5],
+      "to": [2.5, 6.5, 0.5],
+      "rotation": {"angle": 22.5, "axis": "y", "origin": [1.5, 6, 0]},
+      "faces": {
+        "north": {"uv": [0, 0, 2, 0.5], "texture": 0},
+        "south": {"uv": [0, 0, 2, 0.5], "texture": 0},
+        "east": {"uv": [0, 0, 1, 0.5], "texture": 0},
+        "west": {"uv": [0, 0, 1, 0.5], "texture": 0},
+        "up": {"uv": [0, 0, 2, 1], "texture": 0},
+        "down": {"uv": [0, 0, 2, 1], "texture": 0}
+      }
+    },
+    {
+      "name": "Barrel_Left",
+      "from": [4, 5, -1.2],
+      "to": [12, 6, -0.2],
+      "faces": {
+        "north": {"uv": [0, 0, 8, 1], "texture": 0},
+        "south": {"uv": [0, 0, 8, 1], "texture": 0},
+        "east": {"uv": [0, 0, 1, 1], "texture": 0},
+        "west": {"uv": [0, 0, 1, 1], "texture": 0},
+        "up": {"uv": [0, 0, 8, 1], "texture": 0},
+        "down": {"uv": [0, 0, 8, 1], "texture": 0}
+      }
+    },
+    {
+      "name": "Barrel_Right",
+      "from": [4, 5, 0.2],
+      "to": [12, 6, 1.2],
+      "faces": {
+        "north": {"uv": [0, 0, 8, 1], "texture": 0},
+        "south": {"uv": [0, 0, 8, 1], "texture": 0},
+        "east": {"uv": [0, 0, 1, 1], "texture": 0},
+        "west": {"uv": [0, 0, 1, 1], "texture": 0},
+        "up": {"uv": [0, 0, 8, 1], "texture": 0},
+        "down": {"uv": [0, 0, 8, 1], "texture": 0}
+      }
+    },
+    {
+      "name": "Barrel_Rib",
+      "from": [4, 5.4, -0.2],
+      "to": [12, 5.6, 0.2],
+      "faces": {
+        "north": {"uv": [0, 0, 8, 0.2], "texture": 0},
+        "south": {"uv": [0, 0, 8, 0.2], "texture": 0},
+        "east": {"uv": [0, 0, 0.4, 0.2], "texture": 0},
+        "west": {"uv": [0, 0, 0.4, 0.2], "texture": 0},
+        "up": {"uv": [0, 0, 8, 0.4], "texture": 0},
+        "down": {"uv": [0, 0, 8, 0.4], "texture": 0}
+      }
+    },
+    {
+      "name": "Forend_Main",
+      "from": [4, 4, -1.2],
+      "to": [8, 5, 1.2],
+      "faces": {
+        "north": {"uv": [0, 0, 4, 1], "texture": 0},
+        "south": {"uv": [0, 0, 4, 1], "texture": 0},
+        "east": {"uv": [0, 0, 2.4, 1], "texture": 0},
+        "west": {"uv": [0, 0, 2.4, 1], "texture": 0},
+        "up": {"uv": [0, 0, 4, 2.4], "texture": 0},
+        "down": {"uv": [0, 0, 4, 2.4], "texture": 0}
+      }
+    },
+    {
+      "name": "FrontSight_Bead",
+      "from": [11.5, 6, -0.1],
+      "to": [11.7, 6.2, 0.1],
+      "faces": {
+        "north": {"uv": [0, 0, 0.2, 0.2], "texture": 0},
+        "south": {"uv": [0, 0, 0.2, 0.2], "texture": 0},
+        "east": {"uv": [0, 0, 0.2, 0.2], "texture": 0},
+        "west": {"uv": [0, 0, 0.2, 0.2], "texture": 0},
+        "up": {"uv": [0, 0, 0.2, 0.2], "texture": 0},
+        "down": {"uv": [0, 0, 0.2, 0.2], "texture": 0}
+      }
+    },
+    {
+      "name": "TriggerGuard",
+      "from": [0, 3, -0.5],
+      "to": [2, 4, 0.5],
+      "faces": {
+        "north": {"uv": [0, 0, 2, 1], "texture": 0},
+        "south": {"uv": [0, 0, 2, 1], "texture": 0},
+        "east": {"uv": [0, 0, 1, 1], "texture": 0},
+        "west": {"uv": [0, 0, 1, 1], "texture": 0},
+        "up": {"uv": [0, 0, 2, 1], "texture": 0},
+        "down": {"uv": [0, 0, 2, 1], "texture": 0}
+      }
+    },
+    {
+      "name": "Trigger_Left",
+      "from": [1, 3.5, -0.3],
+      "to": [1.5, 4, -0.1],
+      "faces": {
+        "north": {"uv": [0, 0, 0.5, 0.5], "texture": 0},
+        "south": {"uv": [0, 0, 0.5, 0.5], "texture": 0},
+        "east": {"uv": [0, 0, 0.2, 0.5], "texture": 0},
+        "west": {"uv": [0, 0, 0.2, 0.5], "texture": 0},
+        "up": {"uv": [0, 0, 0.5, 0.2], "texture": 0},
+        "down": {"uv": [0, 0, 0.5, 0.2], "texture": 0}
+      }
+    },
+    {
+      "name": "Trigger_Right",
+      "from": [0.5, 3.5, 0.1],
+      "to": [1, 4, 0.3],
+      "faces": {
+        "north": {"uv": [0, 0, 0.5, 0.5], "texture": 0},
+        "south": {"uv": [0, 0, 0.5, 0.5], "texture": 0},
+        "east": {"uv": [0, 0, 0.2, 0.5], "texture": 0},
+        "west": {"uv": [0, 0, 0.2, 0.5], "texture": 0},
+        "up": {"uv": [0, 0, 0.5, 0.2], "texture": 0},
+        "down": {"uv": [0, 0, 0.5, 0.2], "texture": 0}
+      }
+    }
+  ]
+}

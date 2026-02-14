@@ -9,12 +9,24 @@ export const refs = {
     enemyPrototype: null,
     enemyAnimationClips: {},
     enemyAnimationsLoaded: false,
-    enemyLoadFailed: false
+    enemyLoadFailed: false,
+    physics: null,
+    pathfinding: null,
+    navZoneId: null,
+    shieldUniforms: null
 };
 
 export const collections = {
     enemies: [],
     bullets: [],
     mapObstacles: [],
-    pickups: []
+    pickups: [],
+    particles: [],
+    particlePools: {
+        hit: [],
+        death: [],
+        explosion: []
+    },
+    tracers: [],
+    tracerPool: []
 };

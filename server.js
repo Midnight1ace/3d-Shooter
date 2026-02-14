@@ -20,7 +20,10 @@ const mimeTypes = {
     '.ttf': 'application/font-ttf',
     '.eot': 'application/vnd.ms-fontobject',
     '.otf': 'application/font-otf',
-    '.wasm': 'application/wasm'
+    '.wasm': 'application/wasm',
+    '.gltf': 'model/gltf+json',
+    '.glb': 'model/gltf-binary',
+    '.bin': 'application/octet-stream'
 };
 
 const server = http.createServer((req, res) => {

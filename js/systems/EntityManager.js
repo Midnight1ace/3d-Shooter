@@ -1,6 +1,189 @@
 import { GamePhase } from '../core/config.js';
 
 export function createEntityManager({ state, config, refs, collections, ui, audio, callbacks }) {
+    const navigation = {
+        pathfinding: null,
+        zoneId: null
+    };
+    const particleGeometries = {
+        hit: new THREE.SphereGeometry(0.06, 6, 6),
+        death: new THREE.SphereGeometry(0.1, 4, 4),
+        explosion: new THREE.SphereGeometry(0.12, 6, 6)
+    };
+    const particleColors = {
+        hit: 0xffd166,
+        death: 0x8B0000,
+        explosion: [0xffa500, 0xff4d4d]
+    };
+
+    function acquireParticle(type) {
+        const pool = collections.particlePools[type];
+        let particle = pool.pop();
+        if (!particle) {
+            const material = new THREE.MeshBasicMaterial({
+                color: particleColors[type] instanceof Array ? particleColors[type][0] : particleColors[type],
+                transparent: true
+            });
+            particle = new THREE.Mesh(particleGeometries[type], material);
+            particle.userData.poolType = type;
+        }
+        particle.material.opacity = 1;
+        particle.visible = true;
+        return particle;
+    }
+
+    function getPhysics() {
+        return refs.physics;
+    }
+
+    function getColliderHandle(collider) {
+        if (!collider) return null;
+        return typeof collider === 'number' ? collider : collider.handle;
+    }
+
+    function areCollidersOverlapping(world, colliderA, colliderB) {
+        if (!world || colliderA == null || colliderB == null) return false;
+        const handleA = getColliderHandle(colliderA);
+        const handleB = getColliderHandle(colliderB);
+        if (handleA == null || handleB == null) return false;
+        if (world.intersectionPair) {
+            return world.intersectionPair(handleA, handleB);
+        }
+        if (world.contactPair) {
+            return Boolean(world.contactPair(handleA, handleB));
+        }
+        if (world.intersectionsWith) {
+            let hit = false;
+            world.intersectionsWith(handleA, (other) => {
+                if (other === handleB) {
+                    hit = true;
+                    return false;
+                }
+                return true;
+            });
+            return hit;
+        }
+        return false;
+    }
+
+    function createEnemyBody(enemy, role) {
+        const physics = getPhysics();
+        if (!physics?.world || !physics?.rapier) return null;
+        const R = physics.rapier;
+        const radius = getEnemyRadius(role);
+        const height = getEnemyHeight(role);
+        const halfHeight = Math.max(0.2, (height * 0.5) - radius);
+        const bodyDesc = R.RigidBodyDesc.dynamic()
+            .setTranslation(enemy.position.x, enemy.position.y, enemy.position.z)
+            .setLinearDamping(8)
+            .setAngularDamping(10);
+        if (bodyDesc.lockRotations) {
+            bodyDesc.lockRotations();
+        }
+        const body = physics.world.createRigidBody(bodyDesc);
+        const colliderDesc = R.ColliderDesc.capsule(halfHeight, radius)
+            .setFriction(1.2)
+            .setRestitution(0);
+        const collider = physics.world.createCollider(colliderDesc, body);
+        return { body, collider };
+    }
+
+    function removeEnemyPhysics(enemy) {
+        const physics = getPhysics();
+        if (!physics?.world) return;
+        const colliderHandle = getColliderHandle(enemy?.collider);
+        try {
+            if (colliderHandle != null) {
+                physics.world.removeCollider(colliderHandle, true);
+            }
+        } catch (error) {
+            // Ignore removal errors to keep the loop alive.
+        }
+        if (enemy?.body) {
+            const bodyHandle = typeof enemy.body === 'number' ? enemy.body : enemy.body.handle;
+            try {
+                if (bodyHandle != null) {
+                    physics.world.removeRigidBody(bodyHandle);
+                }
+            } catch (error) {
+                // Ignore removal errors to keep the loop alive.
+            }
+        }
+        enemy.collider = null;
+        enemy.body = null;
+    }
+
+    function attachShield(enemyMesh) {
+        if (!enemyMesh || !refs.shieldUniforms) return;
+        const box = new THREE.Box3().setFromObject(enemyMesh);
+        const size = new THREE.Vector3();
+        box.getSize(size);
+        const radius = Math.max(size.x, size.z) * 0.6;
+        const height = Math.max(1, size.y);
+        const geometry = new THREE.SphereGeometry(1, 18, 18);
+        const material = new THREE.ShaderMaterial({
+            uniforms: refs.shieldUniforms,
+            vertexShader: `
+                varying vec3 vNormal;
+                varying vec3 vWorldPos;
+                void main() {
+                    vNormal = normalize(normalMatrix * normal);
+                    vec4 worldPos = modelMatrix * vec4(position, 1.0);
+                    vWorldPos = worldPos.xyz;
+                    gl_Position = projectionMatrix * viewMatrix * worldPos;
+                }
+            `,
+            fragmentShader: `
+                uniform float uTime;
+                uniform vec3 uColor;
+                varying vec3 vNormal;
+                varying vec3 vWorldPos;
+                void main() {
+                    float fresnel = pow(1.0 - abs(vNormal.z), 2.2);
+                    float scan = sin((vWorldPos.y + uTime * 2.4) * 6.0) * 0.5 + 0.5;
+                    float pulse = sin(uTime * 4.0) * 0.5 + 0.5;
+                    float alpha = 0.15 + 0.35 * scan + 0.25 * pulse + 0.4 * fresnel;
+                    gl_FragColor = vec4(uColor, alpha);
+                }
+            `,
+            transparent: true,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+        });
+        const shield = new THREE.Mesh(geometry, material);
+        shield.scale.set(radius, height * 0.55, radius);
+        shield.position.copy(box.getCenter(new THREE.Vector3()));
+        shield.renderOrder = 2;
+        enemyMesh.add(shield);
+        enemyMesh.userData.shield = shield;
+    }
+
+    function updateEnemyPath(enemy, start, target) {
+        if (!navigation.pathfinding || !navigation.zoneId) return;
+        try {
+            const zoneId = navigation.zoneId;
+            const group = navigation.pathfinding.getGroup(zoneId, start);
+            if (group == null) {
+                enemy.path = null;
+                enemy.pathGroup = null;
+                enemy.pathIndex = 0;
+                return;
+            }
+            enemy.pathGroup = group;
+            enemy.path = navigation.pathfinding.findPath(start, target, zoneId, group) || null;
+            enemy.pathIndex = 0;
+            enemy.pathTimer = 0.35 + Math.random() * 0.25;
+        } catch (error) {
+            enemy.path = null;
+            enemy.pathGroup = null;
+            enemy.pathIndex = 0;
+        }
+    }
+
+    function setNavigation(pathfinding, zoneId) {
+        navigation.pathfinding = pathfinding;
+        navigation.zoneId = zoneId;
+    }
     function loadEnemyModel() {
         if (refs.enemyAnimationsLoaded || refs.enemyLoadFailed) return;
         if (!THREE.GLTFLoader) {
@@ -71,7 +254,9 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
             enemy.castShadow = !state.lowPowerMode;
             enemy.receiveShadow = !state.lowPowerMode;
 
+            attachShield(enemy);
             refs.scene.add(enemy);
+            const physicsData = createEnemyBody(enemy, baseType.role);
             collections.enemies.push({
                 mesh: enemy,
                 health: baseType.health + healthBoost,
@@ -84,7 +269,13 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
                 animations: enemy.userData.animations || null,
                 currentAction: null,
                 hitTimer: 0,
-                isDying: false
+                isDying: false,
+                body: physicsData?.body || null,
+                collider: physicsData?.collider || null,
+                path: null,
+                pathIndex: 0,
+                pathTimer: 0,
+                pathGroup: null
             });
             ui.updateHUD();
         } catch (error) {
@@ -133,6 +324,7 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
         if (!enemy) return;
         enemy.isDying = true;
         setTimeout(() => {
+            removeEnemyPhysics(enemy);
             if (enemy.mesh) {
                 refs.scene.remove(enemy.mesh);
             }
@@ -228,6 +420,7 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
             playAnimation(enemy, 'die');
             scheduleEnemyRemoval(enemy, 1000);
         } else {
+            removeEnemyPhysics(enemy);
             refs.scene.remove(enemy.mesh);
             collections.enemies.splice(index, 1);
         }
@@ -255,6 +448,7 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
         const position = enemy.mesh.position.clone();
         createExplosionEffect(position);
         callbacks?.onEnemyDrop?.(position.clone());
+        removeEnemyPhysics(enemy);
         refs.scene.remove(enemy.mesh);
         collections.enemies.splice(index, 1);
 
@@ -283,12 +477,7 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
     function createDeathEffect(position) {
         const particleCount = state.lowPowerMode ? 10 : 22;
         for (let i = 0; i < particleCount; i++) {
-            const geometry = new THREE.SphereGeometry(0.1, 4, 4);
-            const material = new THREE.MeshBasicMaterial({
-                color: 0x8B0000,
-                transparent: true
-            });
-            const particle = new THREE.Mesh(geometry, material);
+            const particle = acquireParticle('death');
 
             particle.position.copy(position);
             particle.position.y += 1;
@@ -299,28 +488,23 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
                 (Math.random() - 0.5) * 4
             );
 
-            particle.userData = {
-                velocity,
-                lifetime: 1.3,
-                maxLifetime: 1.3
-            };
+            particle.userData.velocity = velocity;
+            particle.userData.lifetime = 1.3;
+            particle.userData.maxLifetime = 1.3;
 
             refs.scene.add(particle);
-
-            if (!window.hitParticles) window.hitParticles = [];
-            window.hitParticles.push(particle);
+            collections.particles.push(particle);
         }
     }
 
     function createExplosionEffect(position) {
         const particleCount = state.lowPowerMode ? 18 : 32;
         for (let i = 0; i < particleCount; i++) {
-            const geometry = new THREE.SphereGeometry(0.12, 6, 6);
-            const material = new THREE.MeshBasicMaterial({
-                color: i % 2 === 0 ? 0xffa500 : 0xff4d4d,
-                transparent: true
-            });
-            const particle = new THREE.Mesh(geometry, material);
+            const particle = acquireParticle('explosion');
+            const color = particleColors.explosion[i % particleColors.explosion.length];
+            if (particle.material?.color) {
+                particle.material.color.setHex(color);
+            }
 
             particle.position.copy(position);
             particle.position.y += 1;
@@ -331,16 +515,12 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
                 (Math.random() - 0.5) * 6
             );
 
-            particle.userData = {
-                velocity,
-                lifetime: 1.1,
-                maxLifetime: 1.1
-            };
+            particle.userData.velocity = velocity;
+            particle.userData.lifetime = 1.1;
+            particle.userData.maxLifetime = 1.1;
 
             refs.scene.add(particle);
-
-            if (!window.hitParticles) window.hitParticles = [];
-            window.hitParticles.push(particle);
+            collections.particles.push(particle);
         }
     }
 
@@ -358,21 +538,35 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
         ui.showPrompt(`Wave ${state.wave} incoming`, 1400);
     }
 
-    function updateEnemies(delta) {
+    function updateEnemies(delta, timeScale = 1) {
         const now = Date.now();
+        const scaledDelta = delta * timeScale;
+        const physics = getPhysics();
+        const world = physics?.world || null;
+        const playerCollider = physics?.playerCollider || null;
+        const playerPos = physics?.playerBody
+            ? new THREE.Vector3(
+                physics.playerBody.translation().x,
+                physics.playerBody.translation().y,
+                physics.playerBody.translation().z
+            )
+            : refs.camera.position;
 
         for (let i = collections.enemies.length - 1; i >= 0; i--) {
             const enemy = collections.enemies[i];
 
             if (enemy.mixer) {
-                enemy.mixer.update(delta);
+                enemy.mixer.update(scaledDelta);
             }
             if (enemy.isDying) {
+                if (enemy.body) {
+                    enemy.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+                }
                 continue;
             }
 
             if (enemy.hitTimer > 0) {
-                enemy.hitTimer -= delta;
+                enemy.hitTimer -= scaledDelta;
                 if (enemy.hitTimer <= 0 && enemy.animations) {
                     playAnimation(enemy, 'idle');
                 } else {
@@ -380,45 +574,156 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
                 }
             }
 
-            const direction = new THREE.Vector3();
-            direction.subVectors(refs.camera.position, enemy.mesh.position);
+            const enemyPos = enemy.body
+                ? new THREE.Vector3(enemy.body.translation().x, enemy.body.translation().y, enemy.body.translation().z)
+                : enemy.mesh.position.clone();
+            const direction = new THREE.Vector3().subVectors(playerPos, enemyPos);
             direction.y = 0;
             const distance = direction.length();
-            direction.normalize();
-
             if (distance > 0.001) {
-                // Face the player on the Y axis only.
+                direction.normalize();
                 enemy.mesh.rotation.y = Math.atan2(direction.x, direction.z);
             }
 
-            const step = enemy.speed * (delta * 60);
+            const speed = enemy.speed * 60 * timeScale;
+            let moveDir = direction.clone();
+
+            if (navigation.pathfinding && navigation.zoneId) {
+                enemy.pathTimer -= delta;
+                if (enemy.pathTimer <= 0) {
+                    const start = new THREE.Vector3(enemyPos.x, 0, enemyPos.z);
+                    const target = new THREE.Vector3(playerPos.x, 0, playerPos.z);
+                    updateEnemyPath(enemy, start, target);
+                }
+                if (enemy.path && enemy.path.length > 0) {
+                    let waypoint = enemy.path[enemy.pathIndex] || null;
+                    if (waypoint && waypoint.distanceTo(enemyPos) < 1) {
+                        enemy.pathIndex += 1;
+                        waypoint = enemy.path[enemy.pathIndex] || null;
+                    }
+                    if (waypoint) {
+                        moveDir = new THREE.Vector3(waypoint.x - enemyPos.x, 0, waypoint.z - enemyPos.z);
+                        if (moveDir.length() > 0.001) {
+                            moveDir.normalize();
+                        }
+                    }
+                }
+            }
 
             if (enemy.role === 'flanker') {
                 const preferred = enemy.preferredRange || 7;
-                if (distance > preferred + 1) {
-                    enemy.mesh.position.addScaledVector(direction, step);
-                    if (enemy.animations) playAnimation(enemy, 'run');
-                } else {
+                if (distance <= preferred + 1 && distance > 0.001) {
                     const tangent = new THREE.Vector3(-direction.z, 0, direction.x)
                         .multiplyScalar(enemy.orbitDir);
                     const drift = direction.clone().multiplyScalar(0.35);
-                    const move = tangent.add(drift).normalize();
-                    enemy.mesh.position.addScaledVector(move, step);
-                    if (enemy.animations) playAnimation(enemy, 'run');
-                }
-            } else {
-                if (distance > 2) {
-                    enemy.mesh.position.addScaledVector(direction, step);
-                    if (enemy.animations) playAnimation(enemy, 'run');
-                } else if (enemy.animations) {
-                    playAnimation(enemy, 'attack');
+                    moveDir = tangent.add(drift).normalize();
                 }
             }
 
-            if (distance < 2.2 && now - enemy.lastAttack > 1100) {
+            if (distance > 2) {
+                if (enemy.body) {
+                    enemy.body.setLinvel({ x: moveDir.x * speed, y: 0, z: moveDir.z * speed }, true);
+                } else {
+                    enemy.mesh.position.addScaledVector(moveDir, enemy.speed * (delta * 60) * timeScale);
+                }
+                if (enemy.animations) playAnimation(enemy, 'run');
+            } else if (enemy.animations) {
+                if (enemy.body) {
+                    enemy.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+                }
+                playAnimation(enemy, 'attack');
+            }
+
+            if (world && playerCollider && enemy.collider) {
+                if (areCollidersOverlapping(world, playerCollider, enemy.collider) && now - enemy.lastAttack > 1100) {
+                    enemy.lastAttack = now;
+                    callbacks?.onPlayerDamage?.(config.enemyDamage, enemy.mesh.position);
+                }
+            } else if (distance < 2.2 && now - enemy.lastAttack > 1100) {
                 enemy.lastAttack = now;
                 callbacks?.onPlayerDamage?.(config.enemyDamage, enemy.mesh.position);
             }
+
+            if (!world || !enemy.body) {
+                resolveEnemyCollisions(enemy);
+            }
+        }
+    }
+
+    function resolveEnemyCollisions(enemy) {
+        if (!collections.mapObstacles.length) return;
+        const radius = getEnemyRadius(enemy.role);
+        const pos = enemy.mesh.position;
+        const playerY = pos.y;
+
+        for (let i = 0; i < collections.mapObstacles.length; i++) {
+            const obstacle = collections.mapObstacles[i];
+            if (!obstacle) continue;
+            const bounds = obstacle.userData.boundingBox || new THREE.Box3().setFromObject(obstacle);
+            obstacle.userData.boundingBox = bounds;
+
+            const box = bounds.clone();
+            box.min.x -= radius;
+            box.max.x += radius;
+            box.min.z -= radius;
+            box.max.z += radius;
+
+            if (pos.x < box.min.x || pos.x > box.max.x || pos.z < box.min.z || pos.z > box.max.z) {
+                continue;
+            }
+
+            if (playerY < box.min.y - 1 || playerY > box.max.y + 1) {
+                continue;
+            }
+
+            const overlapX = Math.min(box.max.x - pos.x, pos.x - box.min.x);
+            const overlapZ = Math.min(box.max.z - pos.z, pos.z - box.min.z);
+            if (overlapX < overlapZ) {
+                const centerX = (box.min.x + box.max.x) * 0.5;
+                pos.x = pos.x < centerX ? box.min.x : box.max.x;
+            } else {
+                const centerZ = (box.min.z + box.max.z) * 0.5;
+                pos.z = pos.z < centerZ ? box.min.z : box.max.z;
+            }
+        }
+    }
+
+    function syncEnemyBodies() {
+        for (let i = collections.enemies.length - 1; i >= 0; i--) {
+            const enemy = collections.enemies[i];
+            if (!enemy?.body) continue;
+            const pos = enemy.body.translation();
+            enemy.mesh.position.set(pos.x, pos.y, pos.z);
+        }
+    }
+
+    function getEnemyRadius(role) {
+        switch (role) {
+            case 'tank':
+                return 1.05;
+            case 'fast':
+                return 0.7;
+            case 'flanker':
+                return 0.8;
+            case 'exploder':
+                return 0.85;
+            default:
+                return 0.8;
+        }
+    }
+
+    function getEnemyHeight(role) {
+        switch (role) {
+            case 'tank':
+                return 2.2;
+            case 'fast':
+                return 1.5;
+            case 'flanker':
+                return 1.7;
+            case 'exploder':
+                return 1.6;
+            default:
+                return 1.7;
         }
     }
 
@@ -463,12 +768,10 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
     function createHitEffect(position) {
         const particleCount = state.lowPowerMode ? 10 : 18;
         for (let i = 0; i < particleCount; i++) {
-            const geometry = new THREE.SphereGeometry(0.06, 6, 6);
-            const material = new THREE.MeshBasicMaterial({
-                color: 0xffd166,
-                transparent: true
-            });
-            const particle = new THREE.Mesh(geometry, material);
+            const particle = acquireParticle('hit');
+            if (particle.material?.color) {
+                particle.material.color.setHex(particleColors.hit);
+            }
 
             particle.position.copy(position);
             particle.position.y += 0.2;
@@ -479,16 +782,12 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
                 (Math.random() - 0.5) * 3
             );
 
-            particle.userData = {
-                velocity,
-                lifetime: 0.8,
-                maxLifetime: 0.8
-            };
+            particle.userData.velocity = velocity;
+            particle.userData.lifetime = 0.8;
+            particle.userData.maxLifetime = 0.8;
 
             refs.scene.add(particle);
-
-            if (!window.hitParticles) window.hitParticles = [];
-            window.hitParticles.push(particle);
+            collections.particles.push(particle);
         }
     }
 
@@ -497,8 +796,10 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
         spawnEnemy,
         startWave,
         updateEnemies,
+        syncEnemyBodies,
         applyDamage,
         flashEnemy,
+        setNavigation,
         getEnemyCount: () => collections.enemies.length
     };
 }

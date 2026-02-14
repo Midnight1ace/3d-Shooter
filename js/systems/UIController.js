@@ -69,25 +69,72 @@ export function createUIController({ dom, state, config, weaponCatalog, audio, c
     function renderWeaponOptions() {
         if (!dom.weaponOptionsEl) return;
         dom.weaponOptionsEl.innerHTML = '';
+        dom.weaponOptionsEl.classList.add('weapon-select-grid');
+
+        const typeOrder = ['pistol', 'smg', 'ar', 'rifle', 'shotgun'];
+        const typeLabels = {
+            pistol: 'Pistols',
+            smg: 'SMGs',
+            ar: 'Automatic Rifles',
+            rifle: 'Rifles',
+            shotgun: 'Shotguns'
+        };
+
+        const grouped = typeOrder.reduce((acc, type) => {
+            acc[type] = [];
+            return acc;
+        }, {});
+
         weaponCatalog.forEach((weaponDef) => {
-            const button = document.createElement('button');
-            button.className = 'weapon-option';
-            if (weaponDef.id === state.currentWeaponId) {
-                button.classList.add('active');
+            if (!grouped[weaponDef.type]) {
+                grouped[weaponDef.type] = [];
             }
-            button.type = 'button';
-            button.innerHTML = `
-                <div class="weapon-name-label">${weaponDef.name}</div>
-                <div class="weapon-stat">${weaponDef.type.toUpperCase()} | DMG ${weaponDef.damage}</div>
-                <div class="weapon-stat">Mag ${weaponDef.magSize} | RPM ${Math.round(60000 / weaponDef.fireRate)}</div>
-            `;
-            button.addEventListener('click', () => {
-                callbacks?.onEquipWeapon?.(weaponDef.id);
+            grouped[weaponDef.type].push(weaponDef);
+        });
+
+        typeOrder.forEach((type) => {
+            const items = grouped[type];
+            if (!items || items.length === 0) return;
+            items.sort((a, b) => a.name.localeCompare(b.name));
+
+            const wrapper = document.createElement('div');
+            wrapper.className = 'weapon-select-group';
+            if (items.some((item) => item.id === state.currentWeaponId)) {
+                wrapper.classList.add('active');
+            }
+
+            const label = document.createElement('label');
+            label.className = 'weapon-select-label';
+            label.textContent = typeLabels[type] || type.toUpperCase();
+
+            const select = document.createElement('select');
+            select.className = 'weapon-select';
+            select.setAttribute('aria-label', `${label.textContent} selection`);
+
+            items.forEach((weaponDef) => {
+                const option = document.createElement('option');
+                option.value = weaponDef.id;
+                const rpm = Math.round(60000 / weaponDef.fireRate);
+                option.textContent = `${weaponDef.name} • DMG ${weaponDef.damage} • RPM ${rpm}`;
+                if (weaponDef.id === state.currentWeaponId) {
+                    option.selected = true;
+                }
+                select.appendChild(option);
+            });
+
+            select.addEventListener('change', (event) => {
+                const target = event.target;
+                if (!target) return;
+                const nextId = target.value;
+                callbacks?.onEquipWeapon?.(nextId);
                 renderWeaponOptions();
             });
-            button.addEventListener('pointerenter', () => audio?.playUiSound?.('hover'));
-            button.addEventListener('click', () => audio?.playUiSound?.('click'));
-            dom.weaponOptionsEl.appendChild(button);
+            select.addEventListener('pointerenter', () => audio?.playUiSound?.('hover'));
+            select.addEventListener('change', () => audio?.playUiSound?.('click'));
+
+            wrapper.appendChild(label);
+            wrapper.appendChild(select);
+            dom.weaponOptionsEl.appendChild(wrapper);
         });
     }
 
