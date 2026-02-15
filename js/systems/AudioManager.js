@@ -1,12 +1,14 @@
 export function createAudioManager() {
-    let audioContext = null;
+    let listener = null;
+    const audioPool = new Map();
+    
+    function setListener(newListener) {
+        listener = newListener;
+    }
 
     function ensureAudioContext() {
-        if (!audioContext) {
-            audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        }
-        if (audioContext.state === 'suspended') {
-            audioContext.resume();
+        if (THREE.AudioContext.getContext().state === 'suspended') {
+            THREE.AudioContext.getContext().resume();
         }
     }
 
@@ -113,9 +115,53 @@ export function createAudioManager() {
         }
     }
 
+    function playPositionalSound(type, position) {
+        if (!listener) return;
+        ensureAudioContext();
+        
+        try {
+            const sound = new THREE.PositionalAudio(listener);
+            const context = THREE.AudioContext.getContext();
+            const oscillator = context.createOscillator();
+            const gain = context.createGain();
+            
+            oscillator.type = type === 'explosion' ? 'sawtooth' : 'sine';
+            oscillator.frequency.setValueAtTime(type === 'explosion' ? 100 : 400, context.currentTime);
+            oscillator.frequency.exponentialRampToValueAtTime(10, context.currentTime + 0.3);
+            
+            gain.gain.setValueAtTime(0.5, context.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, context.currentTime + 0.3);
+            
+            oscillator.connect(gain);
+            sound.setNodeSource(gain);
+            sound.setRefDistance(5);
+            sound.setMaxDistance(50);
+            
+            const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.1), new THREE.MeshBasicMaterial({ visible: false }));
+            mesh.position.copy(position);
+            mesh.add(sound);
+            
+            // Add to scene (assumes listener is attached to camera which is in scene)
+            if (listener.parent) {
+                 listener.parent.parent.add(mesh);
+            }
+            
+            oscillator.start();
+            setTimeout(() => {
+                oscillator.stop();
+                if (mesh.parent) mesh.parent.remove(mesh);
+            }, 500);
+            
+        } catch (e) {
+            console.warn('Positional audio failed', e);
+        }
+    }
+
     return {
+        setListener,
         ensureAudioContext,
         playShootSound,
-        playUiSound
+        playUiSound,
+        playPositionalSound
     };
 }

@@ -331,7 +331,7 @@ export function createUIController({ dom, state, config, weaponCatalog, audio, c
             const barrel = weaponMesh.getObjectByName('barrel');
             if (barrel && barrel.material) {
                 barrel.material.emissive = new THREE.Color(0xffaa00);
-                barrel.material.emissiveIntensity = 2;
+                barrel.material.emissiveIntensity = 8;
                 setTimeout(() => {
                     barrel.material.emissive = new THREE.Color(0x000000);
                     barrel.material.emissiveIntensity = 0;

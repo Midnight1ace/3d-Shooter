@@ -7,6 +7,7 @@ import { createInputManager } from './systems/InputManager.js';
 import { createUIController } from './systems/UIController.js';
 import { createWeaponSystem } from './systems/WeaponSystem.js';
 import { createEntityManager } from './systems/EntityManager.js';
+import { createEnvironmentManager } from './systems/EnvironmentManager.js';
 let RAPIER = null;
 let PathfindingCtor = null;
 
@@ -15,13 +16,14 @@ let PathfindingCtor = null;
  * Built with Three.js
  */
 
-let scene, camera, renderer;
+let scene, camera, renderer, composer;
 let player;
+let bloomPass, vignettePass;
 let clock;
-let currentLayout = null;
+let currentLayout = null; // Removed
 let upgradeOptions = [];
-let ammoCrateGeometry = null;
-let ammoCrateMaterial = null;
+let ammoCrateGeometry = null; // Removed
+let ammoCrateMaterial = null; // Removed
 let physics = null;
 let pathfinding = null;
 const NAV_ZONE_ID = 'arena';
@@ -30,6 +32,7 @@ const WORLD_BOUNDARY = 90;
 const audio = createAudioManager();
 let weaponSystem;
 let entityManager;
+let environmentManager;
 
 const ui = createUIController({
     dom,
@@ -62,10 +65,10 @@ entityManager = createEntityManager({
             dom.hud?.classList.remove('hidden');
             ui.hideUpgradeScreen();
         },
-        onRegenerateMap: regenerateMap,
+        onRegenerateMap: () => environmentManager?.regenerateMap(),
         onPlayerDamage: takeDamage,
         onTriggerTimeSlow: triggerTimeSlow,
-        onEnemyDrop: spawnAmmoCrate
+        onEnemyDrop: (pos) => environmentManager?.spawnAmmoCrate(pos)
     }
 });
 
@@ -110,6 +113,36 @@ weaponSystem = createWeaponSystem({
     callbacks: {
         onAddCameraShake: addCameraShake,
         onHitStop: triggerHitStop
+    }
+});
+
+environmentManager = createEnvironmentManager({
+    state,
+    refs,
+    collections,
+    ui,
+    audio,
+    callbacks: {
+        onPickupCollected: (pickup) => {
+            if (pickup.userData.type === 'ammo') {
+                const currentWeapon = weaponSystem.getWeapon();
+                if (!currentWeapon) return false;
+                if (state.reserveAmmo >= currentWeapon.reserveMax) {
+                    ui.showPrompt('Ammo full', 800);
+                    return false;
+                }
+                const beforeAmmo = state.reserveAmmo;
+                const addAmount = Math.max(1, Math.round(state.maxAmmo * (pickup.userData.amountMags || 1)));
+                state.reserveAmmo = Math.min(currentWeapon.reserveMax, state.reserveAmmo + addAmount);
+                weaponSystem.syncWeaponInventory();
+                ui.updateHUD();
+                if (state.reserveAmmo > beforeAmmo) {
+                    ui.showPrompt('Ammo +1 mag', 1000);
+                    return true;
+                }
+            }
+            return false;
+        }
     }
 });
 
@@ -271,122 +304,9 @@ function areCollidersOverlapping(world, colliderA, colliderB) {
     return false;
 }
 
-function createObstacleCollider(mesh) {
-    if (!mesh || !physics?.world) return;
-    const box = new THREE.Box3().setFromObject(mesh);
-    mesh.userData.boundingBox = box;
-    const size = new THREE.Vector3();
-    box.getSize(size);
-    const half = size.multiplyScalar(0.5);
-    const colliderDesc = physics.rapier.ColliderDesc.cuboid(half.x, half.y, half.z)
-        .setTranslation(mesh.position.x, mesh.position.y, mesh.position.z)
-        .setFriction(1.3)
-        .setRestitution(0);
-    if (colliderDesc.setRotation) {
-        colliderDesc.setRotation({
-            x: mesh.quaternion.x,
-            y: mesh.quaternion.y,
-            z: mesh.quaternion.z,
-            w: mesh.quaternion.w
-        });
-    }
-    const collider = physics.world.createCollider(colliderDesc);
-    mesh.userData.colliderHandle = getColliderHandle(collider);
-}
 
-function removeObstacleCollider(mesh) {
-    if (!mesh || !physics?.world) return;
-    const handle = getColliderHandle(mesh.userData.colliderHandle);
-    if (handle != null) {
-        physics.world.removeCollider(handle, true);
-    }
-    mesh.userData.colliderHandle = null;
-}
 
-function createPickupCollider(pickup) {
-    if (!pickup || !physics?.world) return;
-    const size = 0.45;
-    const colliderDesc = physics.rapier.ColliderDesc.cuboid(size, size, size)
-        .setTranslation(pickup.position.x, pickup.position.y, pickup.position.z);
-    if (colliderDesc.setSensor) {
-        colliderDesc.setSensor(true);
-    }
-    const collider = physics.world.createCollider(colliderDesc);
-    pickup.userData.colliderHandle = getColliderHandle(collider);
-}
 
-function removePickupCollider(pickup) {
-    if (!pickup || !physics?.world) return;
-    const handle = getColliderHandle(pickup.userData.colliderHandle);
-    if (handle != null) {
-        physics.world.removeCollider(handle, true);
-    }
-    pickup.userData.colliderHandle = null;
-}
-
-function buildNavMeshGeometry() {
-    const halfSize = Config.navMeshSize;
-    const cellSize = Config.navMeshCellSize;
-    const padding = Config.navMeshPadding;
-    const positions = [];
-    const obstacleBoxes = collections.mapObstacles.map((mesh) => {
-        const bounds = mesh.userData.boundingBox || new THREE.Box3().setFromObject(mesh);
-        mesh.userData.boundingBox = bounds;
-        return {
-            minX: bounds.min.x - padding,
-            maxX: bounds.max.x + padding,
-            minZ: bounds.min.z - padding,
-            maxZ: bounds.max.z + padding
-        };
-    });
-
-    for (let x = -halfSize; x < halfSize; x += cellSize) {
-        for (let z = -halfSize; z < halfSize; z += cellSize) {
-            const cx = x + cellSize * 0.5;
-            const cz = z + cellSize * 0.5;
-            let blocked = false;
-            for (let i = 0; i < obstacleBoxes.length; i++) {
-                const box = obstacleBoxes[i];
-                if (cx >= box.minX && cx <= box.maxX && cz >= box.minZ && cz <= box.maxZ) {
-                    blocked = true;
-                    break;
-                }
-            }
-            if (blocked) continue;
-            const x1 = x + cellSize;
-            const z1 = z + cellSize;
-            positions.push(
-                x, 0, z,
-                x1, 0, z,
-                x1, 0, z1,
-                x, 0, z,
-                x1, 0, z1,
-                x, 0, z1
-            );
-        }
-    }
-
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geometry.computeVertexNormals();
-    return geometry;
-}
-
-function rebuildNavMesh() {
-    if (!pathfinding) return;
-    const zoneBuilder = PathfindingCtor?.createZone || pathfinding.createZone;
-    if (!zoneBuilder) return;
-    try {
-        const geometry = buildNavMeshGeometry();
-        const zone = zoneBuilder(geometry);
-        pathfinding.setZoneData(NAV_ZONE_ID, zone);
-        refs.pathfinding = pathfinding;
-        refs.navZoneId = NAV_ZONE_ID;
-        entityManager?.setNavigation?.(pathfinding, NAV_ZONE_ID);
-    } catch (error) {
-        console.warn('NavMesh build failed, falling back to direct movement.', error);
-    }
-}
 
 function releaseParticle(particle) {
     if (!particle) return;
@@ -397,52 +317,7 @@ function releaseParticle(particle) {
     collections.particlePools[type].push(particle);
 }
 
-function getAmmoCrateGeometry() {
-    if (!ammoCrateGeometry) {
-        ammoCrateGeometry = new THREE.BoxGeometry(0.8, 0.8, 0.8);
-    }
-    return ammoCrateGeometry;
-}
 
-function getAmmoCrateMaterial() {
-    if (!ammoCrateMaterial) {
-        ammoCrateMaterial = new THREE.MeshStandardMaterial({
-            color: 0x5bff9c,
-            emissive: 0x2f7a4f,
-            emissiveIntensity: 0.6,
-            roughness: 0.5,
-            metalness: 0.1
-        });
-    }
-    return ammoCrateMaterial;
-}
-
-function spawnAmmoCrate(position) {
-    if (Math.random() > Config.ammoDropChance) return;
-    if (!refs.scene) return;
-    const crate = new THREE.Mesh(getAmmoCrateGeometry(), getAmmoCrateMaterial());
-    crate.position.copy(position);
-    crate.position.y = 0.45;
-    crate.castShadow = !state.lowPowerMode;
-    crate.receiveShadow = !state.lowPowerMode;
-    crate.userData = {
-        type: 'ammo',
-        amountMags: Config.ammoDropAmountMags
-    };
-    refs.scene.add(crate);
-    collections.pickups.push(crate);
-    createPickupCollider(crate);
-}
-
-function clearPickups() {
-    collections.pickups.forEach((pickup) => {
-        if (pickup) {
-            removePickupCollider(pickup);
-            refs.scene?.remove(pickup);
-        }
-    });
-    collections.pickups = [];
-}
 
 function clearEnemies() {
     collections.enemies.forEach((enemy) => {
@@ -535,13 +410,14 @@ function toggleHitStop() {
 // Initialize the Game
 async function init() {
     console.log('Initializing 3D Shooter Game...');
+    state.phase = GamePhase.LOADING;
     try {
         await loadExternalLibraries();
 
         // Create Scene
         scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x87CEEB);
-        scene.fog = new THREE.Fog(0x87CEEB, 20, 150);
+        scene.background = new THREE.Color(0x445566);
+        scene.fog = new THREE.Fog(0x445566, 30, 180);
         
         // Create Camera
         camera = new THREE.PerspectiveCamera(
@@ -552,6 +428,11 @@ async function init() {
         );
         camera.position.set(0, Config.playerHeight, 0);
         scene.add(camera);
+
+        // Add Audio Listener for spatial sound
+        const listener = new THREE.AudioListener();
+        camera.add(listener);
+        audio.setListener(listener);
 
         // Create Renderer
         state.lowPowerMode = window.matchMedia('(prefers-reduced-motion: reduce)').matches ||
@@ -596,11 +477,8 @@ async function init() {
             console.warn('Physics unavailable. Using fallback collisions.');
         }
         
-        // Setup Lighting - Improved
-        setupLighting();
-        
-        // Create Environment - Improved
-        createEnvironment();
+        // Create Environment
+        environmentManager.createEnvironment();
 
         // Create Player
         createPlayer();
@@ -617,6 +495,9 @@ async function init() {
         // Setup UI
         ui.setupUI();
         
+        // Setup Post-processing
+        setupPostProcessing();
+        
         // Handle Window Resize
         window.addEventListener('resize', onWindowResize);
         
@@ -626,6 +507,9 @@ async function init() {
         // Show Start Screen
         state.phase = GamePhase.START;
         dom.startScreen?.classList.remove('hidden');
+        
+        // Start rendering immediately
+        animate();
         
         console.log('Game initialized successfully!');
     } catch (error) {
@@ -637,295 +521,17 @@ async function init() {
     }
 }
 
-// Setup Lighting - Enhanced
-function setupLighting() {
-    // Ambient Light - warmer
-    const ambientLight = new THREE.AmbientLight(0xffeedd, 0.6);
-    scene.add(ambientLight);
-    
-    // Directional Light (Sun) - bright and warm
-    const directionalLight = new THREE.DirectionalLight(0xffffee, 1.0);
-    directionalLight.position.set(50, 100, 50);
-    directionalLight.castShadow = !state.lowPowerMode;
-    directionalLight.shadow.mapSize.width = state.lowPowerMode ? 1024 : 2048;
-    directionalLight.shadow.mapSize.height = state.lowPowerMode ? 1024 : 2048;
-    directionalLight.shadow.camera.near = 0.5;
-    directionalLight.shadow.camera.far = 500;
-    directionalLight.shadow.camera.left = -100;
-    directionalLight.shadow.camera.right = 100;
-    directionalLight.shadow.camera.top = 100;
-    directionalLight.shadow.camera.bottom = -100;
-    scene.add(directionalLight);
-    
-    // Hemisphere Light - sky/ground colors
-    const hemisphereLight = new THREE.HemisphereLight(0x87CEEB, 0x4a6741, 0.5);
-    scene.add(hemisphereLight);
-    
-    // Point lights for atmosphere
-    const pointLight1 = new THREE.PointLight(0xff6600, 0.5, 30);
-    pointLight1.position.set(20, 5, 20);
-    scene.add(pointLight1);
-    
-    const pointLight2 = new THREE.PointLight(0x0066ff, 0.5, 30);
-    pointLight2.position.set(-20, 5, -20);
-    scene.add(pointLight2);
-}
 
-function loadEnemyModel() {
-    entityManager.loadEnemyModel();
-}
 
-function addMapObject(mesh) {
-    mesh.userData.isObstacle = true;
-    if (!mesh.userData.boundingBox) {
-        mesh.userData.boundingBox = new THREE.Box3().setFromObject(mesh);
-    }
-    collections.mapObstacles.push(mesh);
-    scene.add(mesh);
-    createObstacleCollider(mesh);
-}
 
-function clearMapObstacles() {
-    collections.mapObstacles.forEach((obj) => {
-        removeObstacleCollider(obj);
-        scene.remove(obj);
-        if (obj.geometry) {
-            obj.geometry.dispose();
-        }
-        if (obj.material) {
-            if (Array.isArray(obj.material)) {
-                obj.material.forEach((mat) => mat.dispose());
-            } else {
-                obj.material.dispose();
-            }
-        }
-    });
-    collections.mapObstacles = [];
-}
 
-function regenerateMap() {
-    clearPickups();
-    clearMapObstacles();
-    const layouts = ['lanes', 'ring', 'cross', 'scatter'];
-    let nextLayout = layouts[Math.floor(Math.random() * layouts.length)];
-    if (nextLayout === currentLayout && layouts.length > 1) {
-        const idx = (layouts.indexOf(nextLayout) + 1) % layouts.length;
-        nextLayout = layouts[idx];
-    }
-    currentLayout = nextLayout;
 
-    const density = state.lowPowerMode ? 0.6 : 1;
-    const castShadow = !state.lowPowerMode;
 
-    switch (nextLayout) {
-        case 'ring':
-            createLayoutRing(castShadow, density);
-            break;
-        case 'cross':
-            createLayoutCross(castShadow, density);
-            break;
-        case 'scatter':
-            createLayoutScatter(castShadow, density);
-            break;
-        case 'lanes':
-        default:
-            createLayoutLanes(castShadow, density);
-            break;
-    }
-    rebuildNavMesh();
-}
 
-// Create Environment - Enhanced
-function createEnvironment() {
-    // Ground - grass texture color
-    const groundGeometry = new THREE.PlaneGeometry(200, 200);
-    const groundMaterial = new THREE.MeshStandardMaterial({
-        color: 0x4a7c3f,
-        roughness: 0.9,
-        metalness: 0.0
-    });
-    const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-    ground.rotation.x = -Math.PI / 2;
-    ground.receiveShadow = !state.lowPowerMode;
-    scene.add(ground);
-    
-    // Create skybox effect with large sphere
-    const skyGeometry = new THREE.SphereGeometry(400, 32, 32);
-    const skyMaterial = new THREE.MeshBasicMaterial({
-        color: 0x87CEEB,
-        side: THREE.BackSide
-    });
-    const sky = new THREE.Mesh(skyGeometry, skyMaterial);
-    scene.add(sky);
-    
-    const density = state.lowPowerMode ? 0.5 : 1;
 
-    // Create some obstacles/cover - Improved colors
-    regenerateMap();
-    
-    // Add decorative elements
-    createTrees(density);
-}
 
-// Create Trees
-function createTrees(density = 1) {
-    const count = Math.max(8, Math.round(Config.treeCount * density));
-    const castShadow = !state.lowPowerMode;
-    for (let i = 0; i < count; i++) {
-        // Tree trunk
-        const trunkGeometry = new THREE.CylinderGeometry(0.3, 0.5, 3, 8);
-        const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x5D4037 });
-        const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
-        trunk.position.y = 1.5;
-        trunk.castShadow = castShadow;
-        
-        // Tree foliage
-        const foliageGeometry = new THREE.ConeGeometry(2, 5, 8);
-        const foliageMaterial = new THREE.MeshStandardMaterial({ color: 0x2E7D32 });
-        const foliage = new THREE.Mesh(foliageGeometry, foliageMaterial);
-        foliage.position.y = 5;
-        foliage.castShadow = castShadow;
-        
-        const tree = new THREE.Group();
-        tree.add(trunk);
-        tree.add(foliage);
-        
-        // Random position (avoiding center)
-        const angle = Math.random() * Math.PI * 2;
-        const radius = 40 + Math.random() * 60;
-        tree.position.x = Math.cos(angle) * radius;
-        tree.position.z = Math.sin(angle) * radius;
-        
-        scene.add(tree);
-    }
-}
 
-function createArenaLanes(castShadow, density) {
-    const laneMaterial = new THREE.MeshStandardMaterial({
-        color: 0x5b646e,
-        roughness: 0.9,
-        metalness: 0.15
-    });
-    const wallGeometry = new THREE.BoxGeometry(8, 1.2, 1);
-    const laneZ = [-24, 0, 24];
-    const laneSpacing = density > 0.8 ? 15 : 20;
-    laneZ.forEach((z, laneIndex) => {
-        for (let x = -30; x <= 30; x += laneSpacing) {
-            if (laneIndex === 1 && Math.abs(x) < 6) continue;
-            const wall = new THREE.Mesh(wallGeometry, laneMaterial);
-            wall.position.set(x, 0.6, z);
-            wall.rotation.y = Math.random() * Math.PI;
-            wall.castShadow = castShadow;
-            wall.receiveShadow = castShadow;
-            addMapObject(wall);
-        }
-    });
-}
 
-function createLayoutLanes(castShadow, density) {
-    createArenaLanes(castShadow, density);
-
-    const crateMaterial = new THREE.MeshStandardMaterial({
-        color: 0x8B4513,
-        roughness: 0.8,
-        metalness: 0.1
-    });
-
-    const crateCount = Math.max(4, Math.round(Config.crateCount * density));
-    for (let i = 0; i < crateCount; i++) {
-        const size = 1.4 + Math.random() * 1.5;
-        const geometry = new THREE.BoxGeometry(size, size, size);
-        const obstacle = new THREE.Mesh(geometry, crateMaterial);
-        obstacle.position.x = (Math.random() - 0.5) * 60;
-        obstacle.position.z = (Math.random() - 0.5) * 60;
-        obstacle.position.y = size / 2;
-        obstacle.rotation.y = Math.random() * Math.PI;
-        obstacle.castShadow = castShadow;
-        obstacle.receiveShadow = castShadow;
-        obstacle.userData = { isObstacle: true, isCrate: true };
-        addMapObject(obstacle);
-    }
-}
-
-function createLayoutRing(castShadow, density) {
-    const barrierMaterial = new THREE.MeshStandardMaterial({
-        color: 0x808080,
-        roughness: 0.9,
-        metalness: 0.2
-    });
-    const ringCount = Math.max(10, Math.round(18 * density));
-    for (let i = 0; i < ringCount; i++) {
-        const geometry = new THREE.BoxGeometry(4, 1.4, 1.2);
-        const barrier = new THREE.Mesh(geometry, barrierMaterial);
-        const angle = (i / ringCount) * Math.PI * 2;
-        const radius = 26 + Math.random() * 4;
-        barrier.position.set(Math.cos(angle) * radius, 0.7, Math.sin(angle) * radius);
-        barrier.rotation.y = angle + Math.PI / 2;
-        barrier.castShadow = castShadow;
-        barrier.receiveShadow = castShadow;
-        addMapObject(barrier);
-    }
-}
-
-function createLayoutCross(castShadow, density) {
-    const barrierMaterial = new THREE.MeshStandardMaterial({
-        color: 0x6f7680,
-        roughness: 0.85,
-        metalness: 0.2
-    });
-    const thickness = 1.6;
-    const segments = Math.max(3, Math.round(5 * density));
-    for (let i = -segments; i <= segments; i++) {
-        const geometry = new THREE.BoxGeometry(6, 1.6, thickness);
-        const wall = new THREE.Mesh(geometry, barrierMaterial);
-        wall.position.set(i * 6, 0.8, 0);
-        wall.castShadow = castShadow;
-        wall.receiveShadow = castShadow;
-        addMapObject(wall);
-
-        const wall2 = wall.clone();
-        wall2.rotation.y = Math.PI / 2;
-        wall2.position.set(0, 0.8, i * 6);
-        addMapObject(wall2);
-    }
-}
-
-function createLayoutScatter(castShadow, density) {
-    const crateMaterial = new THREE.MeshStandardMaterial({
-        color: 0x7c5b3b,
-        roughness: 0.85,
-        metalness: 0.1
-    });
-    const pillarMaterial = new THREE.MeshStandardMaterial({
-        color: 0x606060,
-        roughness: 0.5,
-        metalness: 0.3
-    });
-    const crateCount = Math.max(6, Math.round(Config.crateCount * density));
-    const pillarCount = Math.max(4, Math.round(Config.pillarCount * density));
-
-    for (let i = 0; i < crateCount; i++) {
-        const size = 1.4 + Math.random() * 1.6;
-        const geometry = new THREE.BoxGeometry(size, size, size);
-        const obstacle = new THREE.Mesh(geometry, crateMaterial);
-        obstacle.position.set((Math.random() - 0.5) * 70, size / 2, (Math.random() - 0.5) * 70);
-        obstacle.rotation.y = Math.random() * Math.PI;
-        obstacle.castShadow = castShadow;
-        obstacle.receiveShadow = castShadow;
-        addMapObject(obstacle);
-    }
-
-    for (let i = 0; i < pillarCount; i++) {
-        const geometry = new THREE.CylinderGeometry(0.9, 1.1, 6, 12);
-        const pillar = new THREE.Mesh(geometry, pillarMaterial);
-        const angle = (i / pillarCount) * Math.PI * 2 + Math.random();
-        const radius = 18 + Math.random() * 18;
-        pillar.position.set(Math.cos(angle) * radius, 3, Math.sin(angle) * radius);
-        pillar.castShadow = castShadow;
-        pillar.receiveShadow = castShadow;
-        addMapObject(pillar);
-    }
-}
 
 // Create Player
 function createPlayer() {
@@ -1348,6 +954,9 @@ function onWindowResize() {
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, state.lowPowerMode ? 1 : 1.5));
+    if (composer) {
+        composer.setSize(window.innerWidth, window.innerHeight);
+    }
 }
 
 // Player Movement
@@ -1471,41 +1080,86 @@ function resolvePlayerCollisions(position) {
     return resolved;
 }
 
-// Game Loop
 function animate() {
-    if (state.phase !== GamePhase.PLAYING) return;
-    
     requestAnimationFrame(animate);
     
     const delta = clock.getDelta();
-    updateTimeScale(delta);
-    if (state.hitStopTimer > 0) {
-        state.hitStopTimer = Math.max(0, state.hitStopTimer - delta);
-        const shake = getCameraShakeOffset(delta);
-        camera.position.add(shake);
-        renderer.render(scene, camera);
-        camera.position.sub(shake);
-        return;
-    }
     const scaledDelta = delta * state.timeScale;
     
-    updatePlayer(delta);
-    updateEnemies(delta);
-    stepPhysics(delta);
-    entityManager.syncEnemyBodies();
-    syncPlayerFromPhysics();
-    updatePickups(scaledDelta);
-    updateParticles(scaledDelta);
-    weaponSystem.updateReloadIndicator();
+    if (state.phase === GamePhase.PLAYING) {
+        updateTimeScale(delta);
+        
+        if (state.hitStopTimer > 0) {
+            state.hitStopTimer = Math.max(0, state.hitStopTimer - delta);
+        } else {
+            updatePlayer(delta);
+            updateEnemies(delta);
+            stepPhysics(delta);
+            entityManager.syncEnemyBodies();
+            syncPlayerFromPhysics();
+            updateParticles(scaledDelta);
+            weaponSystem.updateReloadIndicator();
 
-    if (refs.shieldUniforms) {
-        refs.shieldUniforms.uTime.value = clock.getElapsedTime();
+            if (refs.shieldUniforms) {
+                refs.shieldUniforms.uTime.value = clock.getElapsedTime();
+            }
+        }
     }
-
+    
     const shake = getCameraShakeOffset(delta);
     camera.position.add(shake);
-    renderer.render(scene, camera);
+    
+    const isPlaying = state.phase === GamePhase.PLAYING;
+    const isStart = state.phase === GamePhase.START;
+    
+    try {
+        if (composer && !state.lowPowerMode && (isPlaying || isStart)) {
+            composer.render(delta);
+        } else {
+            renderer.render(scene, camera);
+        }
+    } catch (e) {
+        if (!state._renderErrorLogged) {
+            console.error('Render failure:', e);
+            state._renderErrorLogged = true;
+        }
+        renderer.render(scene, camera);
+    }
+    
     camera.position.sub(shake);
+}
+
+function setupPostProcessing() {
+    if (state.lowPowerMode) return;
+    
+    try {
+        // Init Composer
+        composer = new THREE.EffectComposer(renderer);
+        
+        // Render Pass
+        const renderPass = new THREE.RenderPass(scene, camera);
+        composer.addPass(renderPass);
+        
+        // Bloom Pass
+        bloomPass = new THREE.UnrealBloomPass(
+            new THREE.Vector2(window.innerWidth, window.innerHeight),
+            1.0,  // Strength (Reduced)
+            0.3,  // Radius
+            0.5   // Threshold (Increased significantly to only bloom highlights)
+        );
+        composer.addPass(bloomPass);
+        
+        // Vignette Pass
+        if (THREE.VignetteShader) {
+            vignettePass = new THREE.ShaderPass(THREE.VignetteShader);
+            vignettePass.uniforms['offset'].value = 1.0;
+            vignettePass.uniforms['darkness'].value = 1.3;
+            composer.addPass(vignettePass);
+        }
+    } catch (error) {
+        console.warn('Post-processing setup failed. Falling back to standard rendering.', error);
+        composer = null;
+    }
 }
 
 // Particle Animation
@@ -1534,43 +1188,7 @@ function updateParticles(delta) {
     }
 }
 
-function updatePickups(delta) {
-    if (!collections.pickups.length) return;
-    const currentWeapon = weaponSystem.getWeapon();
-    if (!currentWeapon) return;
-    const world = refs.physics?.world || null;
-    const playerCollider = refs.physics?.playerCollider || null;
-    for (let i = collections.pickups.length - 1; i >= 0; i--) {
-        const pickup = collections.pickups[i];
-        if (!pickup) {
-            collections.pickups.splice(i, 1);
-            continue;
-        }
-        pickup.rotation.y += delta * 1.5;
-        let shouldPickup = false;
-        if (world && playerCollider && pickup.userData?.colliderHandle != null) {
-            shouldPickup = areCollidersOverlapping(world, playerCollider, pickup.userData.colliderHandle);
-        } else {
-            const distance = pickup.position.distanceTo(camera.position);
-            shouldPickup = distance <= 2.2;
-        }
-        if (shouldPickup) {
-            const beforeAmmo = state.reserveAmmo;
-            const addAmount = Math.max(1, Math.round(state.maxAmmo * (pickup.userData.amountMags || 1)));
-            state.reserveAmmo = Math.min(currentWeapon.reserveMax, state.reserveAmmo + addAmount);
-            weaponSystem.syncWeaponInventory();
-            ui.updateHUD();
-            if (state.reserveAmmo > beforeAmmo) {
-                ui.showPrompt('Ammo +1 mag', 1000);
-            } else {
-                ui.showPrompt('Ammo full', 800);
-            }
-            removePickupCollider(pickup);
-            refs.scene.remove(pickup);
-            collections.pickups.splice(i, 1);
-        }
-    }
-}
+
 
 // Start the game when the page loads
 window.addEventListener('load', init);

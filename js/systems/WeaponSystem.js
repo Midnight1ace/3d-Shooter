@@ -124,9 +124,11 @@ export function createWeaponSystem({ state, config, refs, collections, ui, audio
             const geometry = new THREE.BufferGeometry();
             geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
             const material = new THREE.LineBasicMaterial({
-                color: 0xffff00,
+                color: 0xffffaa,
                 transparent: true,
-                opacity: 0.8
+                opacity: 0.9,
+                depthWrite: false,
+                blending: THREE.AdditiveBlending
             });
             tracer = new THREE.Line(geometry, material);
         }
@@ -190,8 +192,8 @@ export function createWeaponSystem({ state, config, refs, collections, ui, audio
 
         const accentMaterial = new THREE.MeshStandardMaterial({
             color: accentColor,
-            emissive: accentColor.clone().multiplyScalar(0.35),
-            emissiveIntensity: 0.4,
+            emissive: accentColor,
+            emissiveIntensity: 1.5,
             metalness: 0.5,
             roughness: 0.2
         });

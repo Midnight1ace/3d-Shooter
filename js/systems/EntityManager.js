@@ -1,6 +1,62 @@
 import { GamePhase } from '../core/config.js';
 
 export function createEntityManager({ state, config, refs, collections, ui, audio, callbacks }) {
+    const EnemyArchetypes = Object.freeze({
+        normal: {
+            id: 'normal',
+            color: 0xff6f5a,
+            speed: 0.06,
+            health: 100,
+            damageMultiplier: 1,
+            attackRange: 2.2,
+            attackCooldown: 1100,
+            radius: 0.82,
+            height: 1.75,
+            scale: 1,
+            score: 100
+        },
+        flanker: {
+            id: 'flanker',
+            color: 0x78beff,
+            speed: 0.078,
+            health: 85,
+            damageMultiplier: 0.9,
+            attackRange: 2.05,
+            attackCooldown: 950,
+            radius: 0.8,
+            height: 1.7,
+            scale: 0.96,
+            score: 120,
+            mediumRange: 8.5,
+            strafeSwitchMin: 1.5,
+            strafeSwitchMax: 3,
+            closeBurstMin: 0.45,
+            closeBurstMax: 0.75,
+            closeBurstChancePerSec: 0.45,
+            closeBurstCooldownMin: 1.5,
+            closeBurstCooldownMax: 2.8,
+            strafeForwardBias: 0.22,
+            leanAngle: 0.22
+        },
+        exploder: {
+            id: 'exploder',
+            color: 0xff6767,
+            speed: 0.045,
+            health: 60,
+            damageMultiplier: 0,
+            attackRange: 0,
+            attackCooldown: 0,
+            radius: 0.86,
+            height: 1.62,
+            scale: 1.02,
+            score: 90,
+            triggerRange: 4.2,
+            fuseDuration: 1.0,
+            blastRadius: 6.2,
+            blastDamageMultiplier: 2.6
+        }
+    });
+
     const navigation = {
         pathfinding: null,
         zoneId: null
@@ -10,7 +66,8 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
         clearTimer: null,
         pendingSpawns: 0,
         token: 0,
-        active: false
+        active: false,
+        spawnMix: { normal: 1, flanker: 0, exploder: 0 }
     };
     const particleGeometries = {
         hit: new THREE.SphereGeometry(0.06, 6, 6),
@@ -23,6 +80,117 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
         explosion: [0xffa500, 0xff4d4d]
     };
 
+    function randomBetween(min, max) {
+        return min + Math.random() * (max - min);
+    }
+
+    function getEnemyArchetype(role) {
+        return EnemyArchetypes[role] || EnemyArchetypes.normal;
+    }
+
+    function getWaveSpawnMix(wave) {
+        if (wave <= 2) {
+            return { normal: 1, flanker: 0, exploder: 0 };
+        }
+        if (wave <= 4) {
+            return { normal: 0.8, flanker: 0.2, exploder: 0 };
+        }
+        const flanker = Math.min(0.45, 0.2 + (wave - 4) * 0.03);
+        const exploder = Math.min(0.25, 0.15 + (wave - 5) * 0.02);
+        const normal = Math.max(0.15, 1 - flanker - exploder);
+        const total = normal + flanker + exploder;
+        return {
+            normal: normal / total,
+            flanker: flanker / total,
+            exploder: exploder / total
+        };
+    }
+
+    function pickArchetypeFromMix(mix) {
+        const roll = Math.random();
+        if (roll < mix.flanker) return 'flanker';
+        if (roll < mix.flanker + mix.exploder) return 'exploder';
+        return 'normal';
+    }
+
+    function applyArchetypeVisuals(mesh, role) {
+        if (!mesh) return;
+        mesh.userData.archetypeRole = role;
+        mesh.userData.baseScale = mesh.scale.clone();
+
+        mesh.traverse((child) => {
+            if (!child.isMesh || !child.material) return;
+            if (Array.isArray(child.material)) {
+                child.material = child.material.map((mat) => mat.clone());
+            } else {
+                child.material = child.material.clone();
+            }
+            const materials = Array.isArray(child.material) ? child.material : [child.material];
+            materials.forEach((material) => {
+                if (!material) return;
+                if (material.color) {
+                    if (role === 'flanker') {
+                        material.color.lerp(new THREE.Color(0x6aa8ff), 0.45);
+                    } else if (role === 'exploder') {
+                        material.color.lerp(new THREE.Color(0xff7f7f), 0.35);
+                    }
+                }
+                if (material.emissive) {
+                    child.userData.baseEmissive = material.emissive.clone();
+                    child.userData.baseEmissiveIntensity = material.emissiveIntensity || 0;
+                    if (role === 'exploder') {
+                        material.emissive.setHex(0x330000);
+                        material.emissiveIntensity = Math.max(0.2, material.emissiveIntensity || 0.2);
+                    }
+                }
+            });
+        });
+    }
+
+    function setFlankerLean(enemy, target, delta) {
+        if (!enemy?.mesh) return;
+        const leanLerp = Math.min(1, delta * 10);
+        enemy.mesh.rotation.z += (target - enemy.mesh.rotation.z) * leanLerp;
+    }
+
+    function updateExploderFuseVisual(enemy, progress) {
+        const mesh = enemy?.mesh;
+        if (!mesh) return;
+        const clamped = Math.max(0, Math.min(1, progress));
+        const pulse = 0.55 + Math.sin((state.lowPowerMode ? 16 : 26) * clamped) * 0.45;
+        mesh.traverse((child) => {
+            if (!child.isMesh || !child.material) return;
+            const materials = Array.isArray(child.material) ? child.material : [child.material];
+            materials.forEach((material) => {
+                if (!material?.emissive) return;
+                material.emissive.setRGB(1, 0.05, 0.05);
+                material.emissiveIntensity = 0.3 + clamped * 1.25 + pulse * 0.35;
+            });
+        });
+        const baseScale = mesh.userData.baseScale || new THREE.Vector3(1, 1, 1);
+        const scaleBoost = 1 + clamped * 0.12 + pulse * 0.03;
+        mesh.scale.set(baseScale.x * scaleBoost, baseScale.y * scaleBoost, baseScale.z * scaleBoost);
+    }
+
+    function resetExploderVisual(enemy) {
+        const mesh = enemy?.mesh;
+        if (!mesh) return;
+        mesh.traverse((child) => {
+            if (!child.isMesh || !child.material) return;
+            const materials = Array.isArray(child.material) ? child.material : [child.material];
+            materials.forEach((material) => {
+                if (!material?.emissive) return;
+                const baseEmissive = child.userData.baseEmissive || new THREE.Color(0x000000);
+                material.emissive.copy(baseEmissive);
+                material.emissiveIntensity = child.userData.baseEmissiveIntensity || 0;
+            });
+        });
+        const baseScale = mesh.userData.baseScale;
+        if (baseScale) {
+            mesh.scale.copy(baseScale);
+        }
+    }
+
     function clearWaveTimers() {
         waveState.spawnTimers.forEach((timerId) => clearTimeout(timerId));
         waveState.spawnTimers.clear();
@@ -32,6 +200,7 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
         }
         waveState.pendingSpawns = 0;
         waveState.active = false;
+        waveState.spawnMix = { normal: 1, flanker: 0, exploder: 0 };
         waveState.token += 1;
     }
 
@@ -198,28 +367,6 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
         enemyMesh.userData.shield = shield;
     }
 
-    function updateEnemyPath(enemy, start, target) {
-        if (!navigation.pathfinding || !navigation.zoneId) return;
-        try {
-            const zoneId = navigation.zoneId;
-            const group = navigation.pathfinding.getGroup(zoneId, start);
-            if (group == null) {
-                enemy.path = null;
-                enemy.pathGroup = null;
-                enemy.pathIndex = 0;
-                return;
-            }
-            enemy.pathGroup = group;
-            enemy.path = navigation.pathfinding.findPath(start, target, zoneId, group) || null;
-            enemy.pathIndex = 0;
-            enemy.pathTimer = 0.35 + Math.random() * 0.25;
-        } catch (error) {
-            enemy.path = null;
-            enemy.pathGroup = null;
-            enemy.pathIndex = 0;
-        }
-    }
-
     function setNavigation(pathfinding, zoneId) {
         navigation.pathfinding = pathfinding;
         navigation.zoneId = zoneId;
@@ -258,64 +405,54 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
         );
     }
 
-    function spawnEnemy() {
+    function spawnEnemy(roleOverride = null) {
         if (!refs.scene) {
             console.error('ERROR: scene is undefined!');
             return;
         }
 
         try {
-            const enemyTypes = [
-                { role: 'fast', color: 0xff5d4d, speed: 0.075, health: 70 },
-                { role: 'tank', color: 0xffb84d, speed: 0.045, health: 150 },
-                { role: 'flanker', color: 0x7ac9ff, speed: 0.06, health: 90, preferredRange: 7 },
-                { role: 'exploder', color: 0x7cff7a, speed: 0.055, health: 85 }
-            ];
+            const role = roleOverride || pickArchetypeFromMix(waveState.spawnMix || getWaveSpawnMix(state.wave));
+            const archetype = getEnemyArchetype(role);
+            const healthBoost = Math.min(65, state.wave * 6);
+            const speedBoost = Math.min(0.028, state.wave * 0.0018);
+            const waveHealthScale = role === 'exploder' ? 0.65 : 1;
+            const waveSpeedScale = role === 'exploder' ? 0.6 : 1;
 
-            const roll = Math.random();
-            let baseType = enemyTypes[0];
-            if (state.wave >= 2) {
-                if (roll < 0.45) baseType = enemyTypes[0];
-                else if (roll < 0.7) baseType = enemyTypes[1];
-                else if (roll < 0.9) baseType = enemyTypes[2];
-                else baseType = enemyTypes[3];
-            }
-
-            const healthBoost = Math.min(70, state.wave * 6);
-            const speedBoost = Math.min(0.035, state.wave * 0.002);
-
-            const enemy = createEnemyInstance(baseType.role, baseType.color);
+            const enemy = createEnemyInstance(role, archetype.color);
 
             const angle = Math.random() * Math.PI * 2;
             const radius = 25 + Math.random() * 30;
             enemy.position.x = refs.camera.position.x + Math.cos(angle) * radius;
             enemy.position.z = refs.camera.position.z + Math.sin(angle) * radius;
-            enemy.position.y = baseType.role === 'tank' ? 0.35 : 0.2;
+            enemy.position.y = 0.2;
             enemy.castShadow = !state.lowPowerMode;
             enemy.receiveShadow = !state.lowPowerMode;
 
             attachShield(enemy);
             refs.scene.add(enemy);
-            const physicsData = createEnemyBody(enemy, baseType.role);
+            const physicsData = createEnemyBody(enemy, role);
             collections.enemies.push({
                 mesh: enemy,
-                health: baseType.health + healthBoost,
-                speed: baseType.speed + speedBoost,
+                health: Math.round(archetype.health + healthBoost * waveHealthScale),
+                speed: archetype.speed + speedBoost * waveSpeedScale,
                 lastAttack: 0,
-                role: baseType.role,
-                preferredRange: baseType.preferredRange || 0,
-                orbitDir: Math.random() < 0.5 ? -1 : 1,
+                role,
+                archetype,
+                aiState: 'chase',
+                strafeDir: Math.random() < 0.5 ? -1 : 1,
+                strafeSwitchTimer: randomBetween(1.5, 3),
+                closeBurstTimer: 0,
+                closeBurstCooldown: randomBetween(0.5, 1.2),
+                fuseTimer: 0,
+                fuseElapsed: 0,
                 mixer: enemy.userData.mixer || null,
                 animations: enemy.userData.animations || null,
                 currentAction: null,
                 hitTimer: 0,
                 isDying: false,
                 body: physicsData?.body || null,
-                collider: physicsData?.collider || null,
-                path: null,
-                pathIndex: 0,
-                pathTimer: 0,
-                pathGroup: null
+                collider: physicsData?.collider || null
             });
             ui.updateHUD();
         } catch (error) {
@@ -324,9 +461,10 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
     }
 
     function createEnemyInstance(role, color) {
+        const archetype = getEnemyArchetype(role);
         if (refs.enemyPrototype && refs.enemyAnimationsLoaded && THREE.SkeletonUtils) {
             const model = THREE.SkeletonUtils.clone(refs.enemyPrototype);
-            model.scale.setScalar(role === 'tank' ? 1.15 : role === 'fast' ? 0.95 : 1);
+            model.scale.setScalar(archetype.scale || 1);
             const mixer = new THREE.AnimationMixer(model);
             const animations = {};
             Object.keys(refs.enemyAnimationClips).forEach((name) => {
@@ -334,10 +472,13 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
             });
             model.userData.mixer = mixer;
             model.userData.animations = animations;
+            applyArchetypeVisuals(model, role);
             playAnimation(model.userData, 'idle');
             return model;
         }
-        return createEnemyModel(role, color);
+        const model = createEnemyModel(role, color);
+        applyArchetypeVisuals(model, role);
+        return model;
     }
 
     function playAnimation(enemyData, name) {
@@ -378,12 +519,15 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
     }
 
     function createEnemyModel(role, color) {
+        const archetype = getEnemyArchetype(role);
         const group = new THREE.Group();
-        const scale = role === 'tank' ? 1.25 : role === 'fast' ? 0.9 : 1;
+        const scale = archetype.scale || 1;
         const bodyMaterial = new THREE.MeshStandardMaterial({
             color,
-            roughness: 0.6,
-            metalness: 0.2
+            roughness: 0.5,
+            metalness: 0.4,
+            emissive: color,
+            emissiveIntensity: 0.25
         });
         const darkMaterial = new THREE.MeshStandardMaterial({
             color: 0x2b2b2b,
@@ -398,6 +542,22 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
         const head = new THREE.Mesh(new THREE.SphereGeometry(0.45 * scale, 10, 10), bodyMaterial);
         head.position.y = 2.6 * scale;
         group.add(head);
+
+        // Glowing Eyes
+        const eyeGeometry = new THREE.SphereGeometry(0.08 * scale, 8, 8);
+        const eyeMaterial = new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            emissive: 0xffffff,
+            emissiveIntensity: 2.0
+        });
+        
+        const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+        leftEye.position.set(-0.18 * scale, 2.7 * scale, 0.35 * scale);
+        group.add(leftEye);
+        
+        const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+        rightEye.position.set(0.18 * scale, 2.7 * scale, 0.35 * scale);
+        group.add(rightEye);
 
         const armGeometry = new THREE.BoxGeometry(0.35 * scale, 1.2 * scale, 0.35 * scale);
         const leftArm = new THREE.Mesh(armGeometry, darkMaterial);
@@ -417,19 +577,13 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
         rightLeg.position.set(0.4 * scale, 0.4 * scale, 0);
         group.add(rightLeg);
 
-        if (role === 'tank') {
-            const shoulder = new THREE.Mesh(new THREE.BoxGeometry(1.8 * scale, 0.5 * scale, 1.0 * scale), bodyMaterial);
-            shoulder.position.y = 2.0 * scale;
-            group.add(shoulder);
-        }
-
         if (role === 'exploder') {
             const coreMaterial = new THREE.MeshStandardMaterial({
-                color: 0x7cff7a,
-                emissive: 0x55ff66,
-                emissiveIntensity: 0.9,
-                roughness: 0.4,
-                metalness: 0.1
+                color: 0xff3333,
+                emissive: 0xff0000,
+                emissiveIntensity: 2.5,  // Dramatic bloom
+                roughness: 0.2,
+                metalness: 0.8
             });
             const core = new THREE.Mesh(new THREE.SphereGeometry(0.4 * scale, 10, 10), coreMaterial);
             core.position.set(0, 1.4 * scale, 0.55 * scale);
@@ -451,13 +605,12 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
 
         const enemy = collections.enemies[index];
         if (!enemy || enemy.isDying) return;
-
-        if (enemy.role === 'exploder') {
-            explodeEnemy(index, true);
-            return;
-        }
+        const archetype = enemy.archetype || getEnemyArchetype(enemy.role);
 
         createDeathEffect(enemy.mesh.position);
+        if (enemy.role === 'exploder') {
+            resetExploderVisual(enemy);
+        }
 
         if (enemy.animations && enemy.animations.die) {
             playAnimation(enemy, 'die');
@@ -468,36 +621,45 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
             collections.enemies.splice(index, 1);
         }
 
-        state.score += 100;
+        state.score += archetype.score || 100;
         callbacks?.onEnemyDrop?.(enemy.mesh.position.clone());
         ui.updateHUD();
         audio?.playUiSound?.('kill');
+        audio?.playPositionalSound?.('kill', enemy.mesh.position);
         callbacks?.onTriggerTimeSlow?.();
         maybeCompleteWave();
     }
 
-    function explodeEnemy(index, fromKill = false) {
+    function detonateExploder(index, fromKill = false) {
         if (index < 0 || index >= collections.enemies.length) return;
         const enemy = collections.enemies[index];
         if (!enemy || enemy.isDying) return;
         enemy.isDying = true;
+        const archetype = enemy.archetype || getEnemyArchetype('exploder');
+        resetExploderVisual(enemy);
         const position = enemy.mesh.position.clone();
         createExplosionEffect(position);
-        callbacks?.onEnemyDrop?.(position.clone());
+        if (fromKill) {
+            callbacks?.onEnemyDrop?.(position.clone());
+        }
         removeEnemyPhysics(enemy);
         refs.scene.remove(enemy.mesh);
         collections.enemies.splice(index, 1);
 
+        const blastRadius = archetype.blastRadius || 6;
         const distance = refs.camera.position.distanceTo(position);
-        if (distance < 6) {
-            const intensity = Math.max(0.4, 1 - distance / 6);
-            callbacks?.onPlayerDamage?.(Math.round(config.enemyDamage * 2 * intensity), position);
+        if (distance < blastRadius) {
+            const falloff = Math.max(0.2, 1 - (distance / blastRadius));
+            const damage = Math.round(config.enemyDamage * (archetype.blastDamageMultiplier || 2.4) * falloff);
+            callbacks?.onPlayerDamage?.(damage, position);
         }
 
-        state.score += fromKill ? 120 : 80;
+        if (!fromKill) {
+            state.score += Math.max(25, Math.round((archetype.score || 90) * 0.5));
+        }
         ui.updateHUD();
-        audio?.playUiSound?.('kill');
-        callbacks?.onTriggerTimeSlow?.();
+        audio?.playUiSound?.('damage');
+        audio?.playPositionalSound?.('explosion', position);
         maybeCompleteWave();
     }
 
@@ -560,6 +722,7 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
         if (state.phase !== GamePhase.PLAYING) return;
         callbacks?.onRegenerateMap?.();
         const enemyCount = 3 + state.wave * 2;
+        waveState.spawnMix = getWaveSpawnMix(state.wave);
         waveState.token += 1;
         const token = waveState.token;
         waveState.pendingSpawns = enemyCount;
@@ -597,6 +760,8 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
 
         for (let i = collections.enemies.length - 1; i >= 0; i--) {
             const enemy = collections.enemies[i];
+            const archetype = enemy.archetype || getEnemyArchetype(enemy.role);
+            enemy.archetype = archetype;
 
             if (enemy.mixer) {
                 enemy.mixer.update(scaledDelta);
@@ -610,6 +775,7 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
                         enemy.collider = null;
                     }
                 }
+                setFlankerLean(enemy, 0, scaledDelta);
                 continue;
             }
 
@@ -633,42 +799,80 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
                 enemy.mesh.rotation.y = Math.atan2(direction.x, direction.z);
             }
 
-            const speed = enemy.speed * 60 * timeScale;
             let moveDir = direction.clone();
+            let shouldMove = distance > archetype.attackRange;
+            let shouldAttack = !shouldMove;
+            let targetLean = 0;
 
-            if (navigation.pathfinding && navigation.zoneId) {
-                enemy.pathTimer -= delta;
-                if (enemy.pathTimer <= 0) {
-                    const start = new THREE.Vector3(enemyPos.x, 0, enemyPos.z);
-                    const target = new THREE.Vector3(playerPos.x, 0, playerPos.z);
-                    updateEnemyPath(enemy, start, target);
+            if (archetype.id === 'flanker') {
+                if (distance > archetype.mediumRange) {
+                    enemy.aiState = 'chase';
+                } else {
+                    enemy.aiState = 'strafe';
                 }
-                if (enemy.path && enemy.path.length > 0) {
-                    let waypoint = enemy.path[enemy.pathIndex] || null;
-                    if (waypoint && waypoint.distanceTo(enemyPos) < 1) {
-                        enemy.pathIndex += 1;
-                        waypoint = enemy.path[enemy.pathIndex] || null;
+                enemy.closeBurstCooldown = Math.max(0, enemy.closeBurstCooldown - scaledDelta);
+
+                if (enemy.aiState === 'strafe') {
+                    enemy.strafeSwitchTimer -= scaledDelta;
+                    if (enemy.strafeSwitchTimer <= 0) {
+                        enemy.strafeDir *= -1;
+                        enemy.strafeSwitchTimer = randomBetween(archetype.strafeSwitchMin, archetype.strafeSwitchMax);
                     }
-                    if (waypoint) {
-                        moveDir = new THREE.Vector3(waypoint.x - enemyPos.x, 0, waypoint.z - enemyPos.z);
-                        if (moveDir.length() > 0.001) {
-                            moveDir.normalize();
+
+                    if (enemy.closeBurstTimer > 0) {
+                        enemy.closeBurstTimer -= scaledDelta;
+                        moveDir = direction.clone();
+                    } else {
+                        const startBurstChance = archetype.closeBurstChancePerSec * scaledDelta;
+                        if (enemy.closeBurstCooldown <= 0 && Math.random() < startBurstChance) {
+                            enemy.closeBurstTimer = randomBetween(archetype.closeBurstMin, archetype.closeBurstMax);
+                            enemy.closeBurstCooldown = randomBetween(archetype.closeBurstCooldownMin, archetype.closeBurstCooldownMax);
+                            moveDir = direction.clone();
+                        } else {
+                            const tangent = new THREE.Vector3(-direction.z, 0, direction.x).multiplyScalar(enemy.strafeDir || 1);
+                            moveDir = tangent.add(direction.clone().multiplyScalar(archetype.strafeForwardBias)).normalize();
+                            targetLean = -(enemy.strafeDir || 1) * archetype.leanAngle;
                         }
                     }
                 }
-            }
-
-            if (enemy.role === 'flanker') {
-                const preferred = enemy.preferredRange || 7;
-                if (distance <= preferred + 1 && distance > 0.001) {
-                    const tangent = new THREE.Vector3(-direction.z, 0, direction.x)
-                        .multiplyScalar(enemy.orbitDir);
-                    const drift = direction.clone().multiplyScalar(0.35);
-                    moveDir = tangent.add(drift).normalize();
+                shouldMove = distance > archetype.attackRange || enemy.closeBurstTimer > 0;
+                shouldAttack = distance <= archetype.attackRange && enemy.closeBurstTimer <= 0;
+            } else if (archetype.id === 'exploder') {
+                shouldAttack = false;
+                if (enemy.aiState !== 'explode' && distance <= archetype.triggerRange) {
+                    enemy.aiState = 'explode';
+                    enemy.fuseTimer = archetype.fuseDuration;
+                    enemy.fuseElapsed = 0;
+                }
+                if (enemy.aiState === 'explode') {
+                    enemy.fuseTimer = Math.max(0, enemy.fuseTimer - scaledDelta);
+                    enemy.fuseElapsed += scaledDelta;
+                    const progress = 1 - (enemy.fuseTimer / Math.max(0.001, archetype.fuseDuration));
+                    updateExploderFuseVisual(enemy, progress);
+                    shouldMove = false;
+                    if (enemy.fuseTimer <= 0) {
+                        if (usePhysics && enemy.body) {
+                            try {
+                                enemy.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+                            } catch (error) {
+                                enemy.body = null;
+                                enemy.collider = null;
+                            }
+                        }
+                        detonateExploder(i, false);
+                        continue;
+                    }
+                } else {
+                    resetExploderVisual(enemy);
+                    shouldMove = distance > archetype.triggerRange * 0.75;
                 }
             }
 
-            if (distance > 2) {
+            setFlankerLean(enemy, archetype.id === 'flanker' ? targetLean : 0, scaledDelta);
+
+            if (shouldMove && moveDir.lengthSq() > 0.0001) {
+                moveDir.normalize();
+                const speed = enemy.speed * 60 * timeScale;
                 if (usePhysics && enemy.body) {
                     try {
                         enemy.body.setLinvel({ x: moveDir.x * speed, y: 0, z: moveDir.z * speed }, true);
@@ -681,7 +885,7 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
                     enemy.mesh.position.addScaledVector(moveDir, enemy.speed * (delta * 60) * timeScale);
                 }
                 if (enemy.animations) playAnimation(enemy, 'run');
-            } else if (enemy.animations) {
+            } else {
                 if (usePhysics && enemy.body) {
                     try {
                         enemy.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
@@ -690,17 +894,27 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
                         enemy.collider = null;
                     }
                 }
-                playAnimation(enemy, 'attack');
+                if (enemy.animations) {
+                    if (archetype.id === 'exploder' && enemy.aiState === 'explode') {
+                        playAnimation(enemy, 'idle');
+                    } else {
+                        playAnimation(enemy, 'attack');
+                    }
+                }
             }
 
-            if (world && playerCollider && enemy.collider) {
-                if (areCollidersOverlapping(world, playerCollider, enemy.collider) && now - enemy.lastAttack > 1100) {
-                    enemy.lastAttack = now;
-                    callbacks?.onPlayerDamage?.(config.enemyDamage, enemy.mesh.position);
+            if (shouldAttack && archetype.damageMultiplier > 0) {
+                let canHit = false;
+                if (world && playerCollider && enemy.collider) {
+                    canHit = areCollidersOverlapping(world, playerCollider, enemy.collider);
+                } else {
+                    canHit = distance < archetype.attackRange + 0.2;
                 }
-            } else if (distance < 2.2 && now - enemy.lastAttack > 1100) {
-                enemy.lastAttack = now;
-                callbacks?.onPlayerDamage?.(config.enemyDamage, enemy.mesh.position);
+                if (canHit && now - enemy.lastAttack > archetype.attackCooldown) {
+                    enemy.lastAttack = now;
+                    const damage = Math.max(1, Math.round(config.enemyDamage * archetype.damageMultiplier));
+                    callbacks?.onPlayerDamage?.(damage, enemy.mesh.position);
+                }
             }
 
             if (!usePhysics || !enemy.body) {
@@ -759,33 +973,11 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
     }
 
     function getEnemyRadius(role) {
-        switch (role) {
-            case 'tank':
-                return 1.05;
-            case 'fast':
-                return 0.7;
-            case 'flanker':
-                return 0.8;
-            case 'exploder':
-                return 0.85;
-            default:
-                return 0.8;
-        }
+        return getEnemyArchetype(role).radius || 0.82;
     }
 
     function getEnemyHeight(role) {
-        switch (role) {
-            case 'tank':
-                return 2.2;
-            case 'fast':
-                return 1.5;
-            case 'flanker':
-                return 1.7;
-            case 'exploder':
-                return 1.6;
-            default:
-                return 1.7;
-        }
+        return getEnemyArchetype(role).height || 1.75;
     }
 
     function applyDamage(enemyIndex, damage, hitPoint) {
@@ -803,25 +995,31 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
 
     function flashEnemy(enemyMesh) {
         enemyMesh.traverse((child) => {
-            if (child.isMesh) {
+            if (!child.isMesh || !child.material) return;
+            const materials = Array.isArray(child.material) ? child.material : [child.material];
+            materials.forEach((material) => {
+                if (!material?.emissive) return;
                 if (!child.userData.baseEmissive) {
-                    child.userData.baseEmissive = child.material.emissive
-                        ? child.material.emissive.clone()
+                    child.userData.baseEmissive = material.emissive
+                        ? material.emissive.clone()
                         : new THREE.Color(0x000000);
-                    child.userData.baseEmissiveIntensity = child.material.emissiveIntensity || 0;
+                    child.userData.baseEmissiveIntensity = material.emissiveIntensity || 0;
                 }
-                child.material.emissive = new THREE.Color(0xff0000);
-                child.material.emissiveIntensity = 0.5;
-            }
+                material.emissive = new THREE.Color(0xff0000);
+                material.emissiveIntensity = 0.5;
+            });
         });
 
         setTimeout(() => {
             enemyMesh.traverse((child) => {
-                if (child.isMesh) {
+                if (!child.isMesh || !child.material) return;
+                const materials = Array.isArray(child.material) ? child.material : [child.material];
+                materials.forEach((material) => {
+                    if (!material?.emissive) return;
                     const baseEmissive = child.userData.baseEmissive || new THREE.Color(0x000000);
-                    child.material.emissive = baseEmissive.clone();
-                    child.material.emissiveIntensity = child.userData.baseEmissiveIntensity || 0;
-                }
+                    material.emissive = baseEmissive.clone();
+                    material.emissiveIntensity = child.userData.baseEmissiveIntensity || 0;
+                });
             });
         }, 100);
     }
