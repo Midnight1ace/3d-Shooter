@@ -4,6 +4,7 @@ export function createEnvironmentManager({ state, refs, collections, ui, audio, 
     let currentLayout = null;
     let ammoCrateGeometry = null;
     let ammoCrateMaterial = null;
+    let mapSafeZone = null;
     const NAV_ZONE_ID = 'arena';
 
     // --- Helpers for Physics & Colliders ---
@@ -52,14 +53,44 @@ export function createEnvironmentManager({ state, refs, collections, ui, audio, 
 
     // --- Map Objects Management ---
 
+    function updateMapSafeZone() {
+        const playerPos = refs.camera?.position;
+        if (!playerPos) {
+            mapSafeZone = null;
+            return;
+        }
+        mapSafeZone = {
+            x: playerPos.x,
+            z: playerPos.z,
+            radius: 6
+        };
+    }
+
+    function intersectsMapSafeZone(bounds) {
+        if (!mapSafeZone || !bounds) return false;
+        const closestX = Math.max(bounds.min.x, Math.min(mapSafeZone.x, bounds.max.x));
+        const closestZ = Math.max(bounds.min.z, Math.min(mapSafeZone.z, bounds.max.z));
+        const dx = closestX - mapSafeZone.x;
+        const dz = closestZ - mapSafeZone.z;
+        return (dx * dx + dz * dz) < (mapSafeZone.radius * mapSafeZone.radius);
+    }
+
     function addMapObject(mesh) {
+        if (!mesh) return false;
         mesh.userData.isObstacle = true;
         if (!mesh.userData.boundingBox) {
             mesh.userData.boundingBox = new THREE.Box3().setFromObject(mesh);
         }
+        if (intersectsMapSafeZone(mesh.userData.boundingBox)) {
+            if (mesh.geometry?.dispose) {
+                mesh.geometry.dispose();
+            }
+            return false;
+        }
         collections.mapObstacles.push(mesh);
         refs.scene.add(mesh);
         createObstacleCollider(mesh);
+        return true;
     }
 
     function clearMapObstacles() {
@@ -185,6 +216,7 @@ export function createEnvironmentManager({ state, refs, collections, ui, audio, 
     function regenerateMap() {
         clearPickups();
         clearMapObstacles();
+        updateMapSafeZone();
         
         const layouts = ['lanes', 'ring', 'cross', 'scatter'];
         let nextLayout = layouts[Math.floor(Math.random() * layouts.length)];
@@ -439,24 +471,14 @@ export function createEnvironmentManager({ state, refs, collections, ui, audio, 
     // --- Pickups ---
 
     function createPickupCollider(pickup) {
-        if (!pickup || !refs.physics?.world) return;
-        const physics = refs.physics;
-        const size = 0.45;
-        const colliderDesc = physics.rapier.ColliderDesc.cuboid(size, size, size)
-            .setTranslation(pickup.position.x, pickup.position.y, pickup.position.z);
-        
-        if (colliderDesc.setSensor) colliderDesc.setSensor(true);
-        
-        const collider = physics.world.createCollider(colliderDesc);
-        pickup.userData.colliderHandle = getColliderHandle(collider);
+        if (!pickup?.userData) return;
+        // Pickups use distance checks in update(); avoid mutating Rapier world here
+        // because enemy-drop callbacks may run during physics-sensitive code paths.
+        pickup.userData.colliderHandle = null;
     }
 
     function removePickupCollider(pickup) {
-        if (!pickup || !refs.physics?.world) return;
-        const handle = getColliderHandle(pickup.userData.colliderHandle);
-        if (handle != null) {
-            refs.physics.world.removeCollider(handle, true);
-        }
+        if (!pickup?.userData) return;
         pickup.userData.colliderHandle = null;
     }
 

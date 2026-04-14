@@ -5,9 +5,18 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "scan:console": "node scripts/scan-browser-console.mjs"
   },
-  "keywords": ["game", "threejs", "fps", "shooter"],
+  "keywords": [
+    "game",
+    "threejs",
+    "fps",
+    "shooter"
+  ],
   "author": "Zameer",
-  "license": "ISC"
+  "license": "ISC",
+  "dependencies": {
+    "playwright": "^1.58.2"
+  }
 }

@@ -108,9 +108,18 @@ export function createInputManager({ dom, state, config, callbacks }) {
     }
 
     function onMouseDown(event) {
-        if (event.button === 0 && state.phase === GamePhase.PLAYING && state.isPointerLocked) {
-            callbacks?.onPrimaryFire?.();
+        if (event.button !== 0 || state.phase !== GamePhase.PLAYING) return;
+
+        const clickedCanvas = event.target === dom.gameCanvas;
+        if (!state.isPointerLocked) {
+            if (clickedCanvas && dom.gameCanvas?.requestPointerLock) {
+                dom.gameCanvas.requestPointerLock();
+                callbacks?.onPrimaryFire?.();
+            }
+            return;
         }
+
+        callbacks?.onPrimaryFire?.();
     }
 
     function attach() {

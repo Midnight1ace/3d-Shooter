@@ -65,6 +65,8 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
         spawnTimers: new Set(),
         clearTimer: null,
         pendingSpawns: 0,
+        spawnedCount: 0,
+        emergencySpawnAttempts: 0,
         token: 0,
         active: false,
         spawnMix: { normal: 1, flanker: 0, exploder: 0 }
@@ -199,6 +201,8 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
             waveState.clearTimer = null;
         }
         waveState.pendingSpawns = 0;
+        waveState.spawnedCount = 0;
+        waveState.emergencySpawnAttempts = 0;
         waveState.active = false;
         waveState.spawnMix = { normal: 1, flanker: 0, exploder: 0 };
         waveState.token += 1;
@@ -208,6 +212,26 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
         if (!waveState.active) return;
         if (waveState.pendingSpawns > 0) return;
         if (collections.enemies.length > 0) return;
+        if (waveState.spawnedCount <= 0) {
+            if (waveState.emergencySpawnAttempts >= 1 || state.phase !== GamePhase.PLAYING) return;
+            waveState.emergencySpawnAttempts += 1;
+            waveState.pendingSpawns += 1;
+            const token = waveState.token;
+            const timerId = setTimeout(() => {
+                waveState.spawnTimers.delete(timerId);
+                if (token !== waveState.token) return;
+                try {
+                    if (spawnEnemy('normal')) {
+                        waveState.spawnedCount += 1;
+                    }
+                } finally {
+                    waveState.pendingSpawns = Math.max(0, waveState.pendingSpawns - 1);
+                    maybeCompleteWave();
+                }
+            }, 200);
+            waveState.spawnTimers.add(timerId);
+            return;
+        }
 
         waveState.active = false;
         state.wave += 1;
@@ -408,7 +432,7 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
     function spawnEnemy(roleOverride = null) {
         if (!refs.scene) {
             console.error('ERROR: scene is undefined!');
-            return;
+            return false;
         }
 
         try {
@@ -455,8 +479,10 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
                 collider: physicsData?.collider || null
             });
             ui.updateHUD();
+            return true;
         } catch (error) {
             console.error('ERROR creating enemy:', error);
+            return false;
         }
     }
 
@@ -723,6 +749,8 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
         callbacks?.onRegenerateMap?.();
         const enemyCount = 3 + state.wave * 2;
         waveState.spawnMix = getWaveSpawnMix(state.wave);
+        waveState.spawnedCount = 0;
+        waveState.emergencySpawnAttempts = 0;
         waveState.token += 1;
         const token = waveState.token;
         waveState.pendingSpawns = enemyCount;
@@ -732,7 +760,9 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
                 waveState.spawnTimers.delete(timerId);
                 if (token !== waveState.token) return;
                 try {
-                    spawnEnemy();
+                    if (spawnEnemy()) {
+                        waveState.spawnedCount += 1;
+                    }
                 } finally {
                     waveState.pendingSpawns = Math.max(0, waveState.pendingSpawns - 1);
                     maybeCompleteWave();

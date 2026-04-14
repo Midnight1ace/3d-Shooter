@@ -8,6 +8,7 @@ import { createUIController } from './systems/UIController.js';
 import { createWeaponSystem } from './systems/WeaponSystem.js';
 import { createEntityManager } from './systems/EntityManager.js';
 import { createEnvironmentManager } from './systems/EnvironmentManager.js';
+import { createRuntimeLogger } from './systems/RuntimeLogger.js';
 let RAPIER = null;
 let PathfindingCtor = null;
 
@@ -20,6 +21,7 @@ let scene, camera, renderer, composer;
 let player;
 let bloomPass, vignettePass;
 let clock;
+let animationLoopActive = false;
 let currentLayout = null; // Removed
 let upgradeOptions = [];
 let ammoCrateGeometry = null; // Removed
@@ -33,6 +35,18 @@ const audio = createAudioManager();
 let weaponSystem;
 let entityManager;
 let environmentManager;
+const runtimeLogger = createRuntimeLogger({
+    enabled: ['localhost', '127.0.0.1'].includes(window.location.hostname),
+    name: new URLSearchParams(window.location.search).get('logName') || 'gameplay',
+    endpoint: '/__logs'
+});
+runtimeLogger.start();
+window.addEventListener('beforeunload', () => {
+    runtimeLogger.flush();
+});
+window.addEventListener('pagehide', () => {
+    runtimeLogger.flush();
+});
 
 const ui = createUIController({
     dom,
@@ -335,8 +349,12 @@ function clearEnemies() {
             refs.scene?.remove(enemy.mesh);
         }
     });
-    collections.enemies = [];
+    collections.enemies.length = 0;
     ui.updateHUD();
+}
+
+function clearPickups() {
+    environmentManager?.clearPickups?.();
 }
 
 function clearActiveParticles() {
@@ -344,7 +362,7 @@ function clearActiveParticles() {
         const particle = collections.particles[i];
         releaseParticle(particle);
     }
-    collections.particles = [];
+    collections.particles.length = 0;
 }
 
 
@@ -521,18 +539,6 @@ async function init() {
     }
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
 // Create Player
 function createPlayer() {
     player = {
@@ -548,7 +554,7 @@ function createPlayer() {
     refs.player = player;
 }
 
-// Setup Controls - Fixed
+// Setup Controls
 function setupControls() {
     input.attach();
 }
@@ -834,7 +840,7 @@ function startGame() {
     
     // Clear existing enemies
     clearEnemies();
-    clearPickups();
+    environmentManager?.clearPickups?.();
     clearActiveParticles();
     
     // Reset camera
@@ -860,7 +866,9 @@ function startGame() {
     
     // Start game loop
     clock.start();
-    animate();
+    // animate() is already running from init()
+    
+    console.log('Game started');
 }
 
 function pauseGame() {
@@ -905,7 +913,7 @@ function restartGame() {
     
     // Clear existing enemies
     clearEnemies();
-    clearPickups();
+    environmentManager?.clearPickups?.();
     clearActiveParticles();
     
     // Reset camera
@@ -1081,9 +1089,19 @@ function resolvePlayerCollisions(position) {
 }
 
 function animate() {
-    requestAnimationFrame(animate);
+    if (!animationLoopActive) {
+        animationLoopActive = true;
+    } else {
+        return;
+    }
+    animateFrame();
+}
+
+function animateFrame() {
+    requestAnimationFrame(animateFrame);
     
-    const delta = clock.getDelta();
+    // Use a fixed max delta to avoid huge jumps or 0 values
+    const delta = Math.min(0.1, clock.getDelta());
     const scaledDelta = delta * state.timeScale;
     
     if (state.phase === GamePhase.PLAYING) {
@@ -1094,6 +1112,7 @@ function animate() {
         } else {
             updatePlayer(delta);
             updateEnemies(delta);
+            environmentManager?.update?.(scaledDelta);
             stepPhysics(delta);
             entityManager.syncEnemyBodies();
             syncPlayerFromPhysics();
@@ -1104,6 +1123,12 @@ function animate() {
                 refs.shieldUniforms.uTime.value = clock.getElapsedTime();
             }
         }
+    } else {
+        // Reduced updates for non-playing phases (e.g. still update particles or uniforms if needed)
+        if (refs.shieldUniforms) {
+            refs.shieldUniforms.uTime.value = clock.getElapsedTime();
+        }
+        updateParticles(scaledDelta);
     }
     
     const shake = getCameraShakeOffset(delta);
@@ -1111,10 +1136,13 @@ function animate() {
     
     const isPlaying = state.phase === GamePhase.PLAYING;
     const isStart = state.phase === GamePhase.START;
+    const isUpgrading = state.phase === GamePhase.CHOOSING;
+    const isGameOver = state.phase === GamePhase.GAME_OVER;
     
     try {
-        if (composer && !state.lowPowerMode && (isPlaying || isStart)) {
-            composer.render(delta);
+        // Render in all sensible phases
+        if (composer && !state.lowPowerMode && (isPlaying || isStart || isUpgrading || isGameOver)) {
+            composer.render();
         } else {
             renderer.render(scene, camera);
         }
