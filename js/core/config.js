@@ -63,64 +63,23 @@ export const Config = {
 
 const WeaponNameSets = {
     pistol: [
-        'BerettaM9',
-        'ColtPython',
-        'DesertEagle',
-        'FNFiveSeven',
-        'Glock17',
-        'LugerP08',
-        'M1911',
-        'MakarovPM',
-        'MauserC96',
-        'P320'
+        'Pistol',
+        'Revolver'
     ],
     smg: [
-        'MAC10',
-        'MP40',
-        'MP5',
-        'P90',
-        'PP19Bizon',
-        'Skorpion',
-        'Thompson',
-        'UMP45',
-        'UZI',
-        'Vector'
+        'Submachine Gun'
     ],
     ar: [
-        'AUG',
-        'FAMAS',
-        'G36C',
-        'GalilARM',
-        'HK416',
-        'L85A2',
-        'M4A1',
-        'SCAR_H',
-        'SIG_MCX_Spear',
-        'TavorTAR21'
+        'Assault Rifle',
+        'Bullpup'
     ],
     rifle: [
-        'AWM',
-        'BarrettM82',
-        'CheyTacIntervention',
-        'DragunovSVD',
-        'Kar98k',
-        'M14',
-        'M1Garand',
-        'MosinNagant',
-        'Remington700',
-        'VSSVintorez'
+        'Sniper Rifle'
     ],
     shotgun: [
-        'AA12',
-        'BenelliM4',
-        'DoubleBarrel',
-        'KSG',
-        'Mossberg500',
-        'Remington870',
-        'Saiga12',
-        'SPAS12',
-        'Striker',
-        'Winchester1887'
+        'Shotgun',
+        'Shotgun Sawed Off',
+        'Shotgun Short Stock'
     ]
 };
 

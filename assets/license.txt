@@ -1,0 +1,8 @@
+Model Information:
+* title:	Polyart Zombies with Animations Free Pack
+* source:	https://sketchfab.com/3d-models/polyart-zombies-with-animations-free-pack-d9bcfdd88f5348549bc947226af7c314
+* author:	Denys Almaral (https://sketchfab.com/denysalmaral)
+
+Model License:
+* license type:	SKETCHFAB Standard (https://sketchfab.com/licenses)
+* requirements:	Under basic restrictions, use worldwide, on all types of media, commercially or not, and in all types of derivative works

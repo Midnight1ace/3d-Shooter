@@ -102,9 +102,18 @@ const server = http.createServer((req, res) => {
         return;
     }
 
-    console.log(`Request: ${req.url}`);
-    
-    let filePath = '.' + req.url;
+    const requestPath = (() => {
+        try {
+            const parsed = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+            return decodeURIComponent(parsed.pathname);
+        } catch (error) {
+            return '/';
+        }
+    })();
+
+    console.log(`Request: ${requestPath}`);
+
+    let filePath = '.' + requestPath;
     if (filePath === './') {
         filePath = './index.html';
     }
