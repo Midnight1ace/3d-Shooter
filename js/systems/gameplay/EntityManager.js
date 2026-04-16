@@ -332,6 +332,21 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
             'assets/polyart_zombies_with_animations_free_pack.glb',
             (gltf) => {
                 refs.enemyPrototype = gltf.scene;
+                
+                // Normalize the enemy prototype: center on XZ and scale to ~1.7m height
+                const box = new THREE.Box3().setFromObject(refs.enemyPrototype);
+                const size = new THREE.Vector3();
+                box.getSize(size);
+                const scale = 1.7 / (size.y || 1);
+                refs.enemyPrototype.scale.setScalar(scale);
+                
+                // Apply centering
+                const centeredBox = new THREE.Box3().setFromObject(refs.enemyPrototype);
+                const center = centeredBox.getCenter(new THREE.Vector3());
+                refs.enemyPrototype.position.x -= center.x;
+                refs.enemyPrototype.position.z -= center.z;
+                refs.enemyPrototype.position.y -= centeredBox.min.y;
+
                 refs.enemyPrototype.traverse((child) => {
                     if (child.isMesh) {
                         child.castShadow = !state.lowPowerMode;
@@ -858,12 +873,10 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
             }
 
             if (shouldAttack && archetype.damageMultiplier > 0) {
-                let canHit = false;
-                if (world && playerCollider && enemy.collider) {
-                    canHit = areCollidersOverlapping(world, playerCollider, enemy.collider);
-                } else {
-                    canHit = distance < archetype.attackRange + 0.2;
-                }
+                // Reliable distance-based attack check
+                const attackRange = archetype.attackRange || 2.2;
+                const canHit = distance < (attackRange + refs.player.radius * 0.5);
+                
                 if (canHit && now - enemy.lastAttack > archetype.attackCooldown) {
                     enemy.lastAttack = now;
                     const damage = Math.max(1, Math.round(config.enemyDamage * archetype.damageMultiplier));
@@ -881,40 +894,39 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
         if (!collections.mapObstacles.length) return;
         const radius = getEnemyRadius(enemy.role);
         const pos = enemy.mesh.position;
-        const playerY = pos.y;
+        const enemyY = pos.y;
 
         for (let i = 0; i < collections.mapObstacles.length; i++) {
             const obstacle = collections.mapObstacles[i];
             if (!obstacle) continue;
-            const bounds = obstacle.userData.boundingBox || new THREE.Box3().setFromObject(obstacle);
-            obstacle.userData.boundingBox = bounds;
+            
+            const bounds = obstacle.userData.boundingBox;
+            if (!bounds) continue;
 
-            const box = bounds.clone();
-            box.min.x -= radius;
-            box.max.x += radius;
-            box.min.z -= radius;
-            box.max.z += radius;
+            const minX = bounds.min.x - radius;
+            const maxX = bounds.max.x + radius;
+            const minZ = bounds.min.z - radius;
+            const maxZ = bounds.max.z + radius;
 
-            if (pos.x < box.min.x || pos.x > box.max.x || pos.z < box.min.z || pos.z > box.max.z) {
+            if (pos.x < minX || pos.x > maxX || pos.z < minZ || pos.z > maxZ) {
+                continue;
+            }
+            
+            // Vertical check (simplified)
+            if (enemyY < bounds.min.y - 1 || enemyY > bounds.max.y + 1) {
                 continue;
             }
 
-            if (playerY < box.min.y - 1 || playerY > box.max.y + 1) {
-                continue;
-            }
-
-            const overlapX = Math.min(box.max.x - pos.x, pos.x - box.min.x);
-            const overlapZ = Math.min(box.max.z - pos.z, pos.z - box.min.z);
+            const overlapX = Math.min(maxX - pos.x, pos.x - minX);
+            const overlapZ = Math.min(maxZ - pos.z, pos.z - minZ);
+            
             if (overlapX < overlapZ) {
-                const centerX = (box.min.x + box.max.x) * 0.5;
-                pos.x = pos.x < centerX ? box.min.x : box.max.x;
+                pos.x = pos.x < (minX + maxX) * 0.5 ? minX : maxX;
             } else {
-                const centerZ = (box.min.z + box.max.z) * 0.5;
-                pos.z = pos.z < centerZ ? box.min.z : box.max.z;
+                pos.z = pos.z < (minZ + maxZ) * 0.5 ? minZ : maxZ;
             }
         }
     }
-
     function syncEnemyBodies() {
         const world = getPhysics()?.world || null;
         if (!world) return;

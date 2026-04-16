@@ -481,11 +481,11 @@ export function createEnvironmentManager({ state, refs, collections, ui, audio, 
 
     function setupLighting() {
         // Ambient Light - lower intensity
-        const ambientLight = new THREE.AmbientLight(0xffeedd, 0.4);
+        const ambientLight = new THREE.AmbientLight(0xffeedd, 0.3);
         refs.scene.add(ambientLight);
 
         // Directional Light - lower intensity
-        const directionalLight = new THREE.DirectionalLight(0xffffee, 0.8);
+        const directionalLight = new THREE.DirectionalLight(0xffffee, 0.65);
         directionalLight.position.set(50, 100, 50);
         directionalLight.castShadow = !state.lowPowerMode;
         

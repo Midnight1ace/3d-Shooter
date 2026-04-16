@@ -14,6 +14,7 @@ import { createEffectsSystem } from './systems/gameplay/EffectsSystem.js';
 import { createUpgradeSystem } from './systems/gameplay/UpgradeSystem.js';
 import { createPlayerSystem } from './systems/gameplay/PlayerSystem.js';
 import { createCollisionSystem } from './systems/engine/CollisionSystem.js';
+import { AuthSystem } from './systems/network/AuthSystem.js';
 let RAPIER = null;
 let PathfindingCtor = null;
 const NAV_ZONE_ID = 'arena';
@@ -382,31 +383,107 @@ async function init() {
         
         // Setup UI
         ui.setupUI();
+        setupAuthUI();
         
         // Setup Post-processing
         effectsSystem.setupPostProcessing();
         
-        // Handle Window Resize
+        // Window Resize
         window.addEventListener('resize', onWindowResize);
         
-        // Hide Loading Screen
         ui.finishLoading();
         
-        // Show Start Screen
-        state.phase = GamePhase.START;
-        dom.startScreen?.classList.remove('hidden');
+        // Show Auth or Start Screen
+        const user = AuthSystem.checkSession();
+        if (user) {
+            state.phase = GamePhase.START;
+            dom.startScreen?.classList.remove('hidden');
+            ui.showPrompt(`Welcome back, ${user.username}`, 2000);
+        } else {
+            state.phase = GamePhase.START; // Keep in start phase but show auth
+            dom.startScreen?.classList.add('hidden');
+            document.getElementById('auth-screen')?.classList.remove('hidden');
+        }
         
-        // Start rendering immediately
         animate();
-        
-        console.log('Game initialized successfully!');
     } catch (error) {
         console.error('Failed to initialize game:', error);
         ui.finishLoading();
         state.phase = GamePhase.START;
-        dom.startScreen?.classList.remove('hidden');
-        ui.showPrompt('Init failed. Check console for details.', 4000);
+        document.getElementById('auth-screen')?.classList.remove('hidden');
     }
+}
+
+function setupAuthUI() {
+    const authScreen = document.getElementById('auth-screen');
+    const loginBtn = document.getElementById('login-button');
+    const registerBtn = document.getElementById('register-button');
+    const guestBtn = document.getElementById('guest-button');
+    const errorText = document.getElementById('auth-error');
+    const usernameInput = document.getElementById('auth-username');
+    const passwordInput = document.getElementById('auth-password');
+
+    const menuLbBtn = document.getElementById('menu-leaderboard-button');
+    const gameOverLbBtn = document.getElementById('show-leaderboard-btn');
+    const closeLbBtn = document.getElementById('close-leaderboard-btn');
+    const lbScreen = document.getElementById('leaderboard-screen');
+
+    loginBtn?.addEventListener('click', async () => {
+        const username = usernameInput.value.trim();
+        const password = passwordInput.value;
+        if (!username || !password) return;
+        
+        const res = await AuthSystem.login(username, password);
+        if (res.ok) {
+            authScreen.classList.add('hidden');
+            dom.startScreen.classList.remove('hidden');
+        } else {
+            errorText.textContent = res.error || 'Login failed';
+            errorText.classList.remove('hidden');
+        }
+    });
+
+    registerBtn?.addEventListener('click', async () => {
+        const username = usernameInput.value.trim();
+        const password = passwordInput.value;
+        if (!username || !password) return;
+        if (username.length < 3) return (errorText.textContent = 'Username too short', errorText.classList.remove('hidden'));
+        
+        const res = await AuthSystem.register(username, password);
+        if (res.ok) {
+            errorText.textContent = 'Registered! Please login.';
+            errorText.classList.remove('hidden');
+            errorText.style.color = 'var(--accent)';
+        } else {
+            errorText.textContent = res.error || 'Registration failed';
+            errorText.classList.remove('hidden');
+            errorText.style.color = 'var(--danger)';
+        }
+    });
+
+    guestBtn?.addEventListener('click', () => {
+        AuthSystem.user = null;
+        authScreen.classList.add('hidden');
+        dom.startScreen.classList.remove('hidden');
+    });
+
+    const showLb = async () => {
+        lbScreen.classList.remove('hidden');
+        const scores = await AuthSystem.getLeaderboard();
+        const body = document.getElementById('leaderboard-body');
+        body.innerHTML = scores.map((s, i) => `
+            <tr class="${AuthSystem.user?.username === s.username ? 'highlight' : ''}">
+                <td class="rank">#${i + 1}</td>
+                <td>${s.username || 'Guest'}</td>
+                <td>${s.score.toLocaleString()}</td>
+                <td>${s.wave}</td>
+            </tr>
+        `).join('') || '<tr><td colspan="4" style="text-align:center">No scores yet</td></tr>';
+    };
+
+    menuLbBtn?.addEventListener('click', showLb);
+    gameOverLbBtn?.addEventListener('click', showLb);
+    closeLbBtn?.addEventListener('click', () => lbScreen.classList.add('hidden'));
 }
 
 // Create Player
@@ -547,6 +624,8 @@ function startGame() {
         refs.player.yaw = 0;
         refs.player.pitch = 0;
         refs.player.viewOffsetY = 0;
+        refs.player.lastPosition = null;
+        refs.player.hackWarnings = 0;
     }
     physicsSystem.resetPlayerPhysics();
     
@@ -622,6 +701,8 @@ function restartGame() {
         refs.player.yaw = 0;
         refs.player.pitch = 0;
         refs.player.viewOffsetY = 0;
+        refs.player.lastPosition = null;
+        refs.player.hackWarnings = 0;
     }
     physicsSystem.resetPlayerPhysics();
     
@@ -649,12 +730,18 @@ function gameOver() {
     ui.hideUpgradeScreen();
     document.body.classList.remove('time-slow');
     document.getElementById('final-score').textContent = state.score;
-    document.getElementById('final-wave').textContent = state.wave;
     if (typeof document.exitPointerLock === 'function') {
         document.exitPointerLock();
     }
     ui.clearPrompts();
     dom.restartGameButton?.focus();
+
+    // Submit score if logged in
+    if (AuthSystem.user?.username) {
+        AuthSystem.submitScore(AuthSystem.user.username, state.score, state.wave).then(res => {
+            if (res.ok) ui.showPrompt('Score submitted!', 2000);
+        });
+    }
 }
 
 // Window Resize Handler

@@ -12,7 +12,9 @@ export function createPlayerSystem({ state, refs, collections, dom, camera, inpu
             canShoot: true,
             yaw: 0,
             pitch: 0,
-            viewOffsetY: 0
+            viewOffsetY: 0,
+            lastPosition: null,
+            hackWarnings: 0
         };
         refs.player = player;
         return player;
@@ -118,6 +120,28 @@ export function createPlayerSystem({ state, refs, collections, dom, camera, inpu
         }
 
         dom.chipSprint?.classList.toggle('active', input.keys.shift && player.velocity.length() > 0);
+
+        // Anti-Cheat: Validate distance moved
+        if (!player.lastPosition) {
+            player.lastPosition = camera.position.clone();
+        } else {
+            const dist = camera.position.distanceTo(player.lastPosition);
+            const maxExpectedDist = Math.max(5, 45 * delta * 2);
+            if (dist > maxExpectedDist) {
+                console.warn(`[AntiCheat] Unnatural movement detected: ${dist.toFixed(2)} units (max expected ${maxExpectedDist.toFixed(2)})`);
+                player.hackWarnings++;
+                if (player.hackWarnings > 2) {
+                    camera.position.copy(player.lastPosition);
+                    // Generate an error log
+                    if (window.console && console.error) {
+                        console.error(`[AntiCheat] Speedhack/Teleport prevented. Movement distance: ${dist.toFixed(2)}`);
+                    }
+                }
+            } else {
+                if (player.hackWarnings > 0) player.hackWarnings--;
+                player.lastPosition.copy(camera.position); // Only update lastPosition if it wasn't a hack snapback
+            }
+        }
     }
 
     function resolvePlayerCollisions(position) {

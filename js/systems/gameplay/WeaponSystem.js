@@ -90,8 +90,16 @@ export function createWeaponSystem({ state, config, refs, collections, ui, audio
             if (child.isMesh) {
                 child.castShadow = !state.lowPowerMode;
                 child.receiveShadow = !state.lowPowerMode;
+                if (child.material) {
+                    const materials = Array.isArray(child.material) ? child.material : [child.material];
+                    materials.forEach((m) => {
+                        if (m.emissive) m.emissive.setHex(0x000000);
+                        m.emissiveIntensity = 0;
+                    });
+                }
             }
         });
+        clone.rotation.y = Math.PI;
         normalizeWeaponModel(clone, weaponDef);
         group.clear();
         group.add(clone);

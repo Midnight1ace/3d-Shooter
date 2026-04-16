@@ -89,6 +89,31 @@
         <button id="spawn-btn" class="debug-button hidden" aria-label="Spawn an enemy">Spawn Enemy</button>
     </div>
 
+    <!-- Auth Screen -->
+    <div id="auth-screen" role="dialog" aria-modal="true">
+        <div class="menu-card compact">
+            <h2 class="title-font">Account</h2>
+            <p class="subtitle">Join the ranking or log in to continue.</p>
+            
+            <div id="auth-forms">
+                <div class="form-group">
+                    <input type="text" id="auth-username" placeholder="Username" aria-label="Username">
+                    <input type="password" id="auth-password" placeholder="Password" aria-label="Password">
+                </div>
+                
+                <div class="auth-actions">
+                    <button id="login-button" class="primary">Login</button>
+                    <button id="register-button">Register</button>
+                </div>
+                
+                <p id="auth-error" class="hidden error-text"></p>
+            </div>
+            
+            <div class="divider">OR</div>
+            <button id="guest-button">Play as Guest</button>
+        </div>
+    </div>
+
     <!-- Start Screen -->
     <div id="start-screen" role="dialog" aria-modal="true">
         <div class="menu-card hero">
@@ -98,6 +123,7 @@
                 <p class="subtitle">Survive escalating waves in a fast, responsive arena. Stay mobile, manage ammo, and push the score.</p>
                 <div class="hero-actions">
                     <button id="start-button" class="primary">Start Mission</button>
+                    <button id="menu-leaderboard-button">Leaderboard</button>
                 </div>
                 <div class="hero-meta">
                     <span class="meta-chip">Wave-Based</span>
@@ -167,7 +193,33 @@
             <h2 class="title-font">Game Over</h2>
             <p class="stat-line">Final Score: <span id="final-score">0</span></p>
             <p class="stat-line">Wave Reached: <span id="final-wave">1</span></p>
-            <button id="restart-game-button" class="primary">Play Again</button>
+            <div class="action-stack">
+                <button id="restart-game-button" class="primary">Play Again</button>
+                <button id="show-leaderboard-btn">Leaderboard</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Leaderboard Screen -->
+    <div id="leaderboard-screen" class="hidden" role="dialog" aria-modal="true">
+        <div class="menu-card leaderboard">
+            <h2 class="title-font">Global Rankings</h2>
+            <div class="leaderboard-container">
+                <table id="leaderboard-table">
+                    <thead>
+                        <tr>
+                            <th>Rank</th>
+                            <th>Player</th>
+                            <th>Score</th>
+                            <th>Wave</th>
+                        </tr>
+                    </thead>
+                    <tbody id="leaderboard-body">
+                        <!-- Entries will be injected here -->
+                    </tbody>
+                </table>
+            </div>
+            <button id="close-leaderboard-btn" class="primary">Back to Menu</button>
         </div>
     </div>
 

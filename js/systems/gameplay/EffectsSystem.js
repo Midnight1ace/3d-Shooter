@@ -76,9 +76,9 @@ export function createEffectsSystem({ state, config, refs, collections, dom, ren
             // Bloom Pass
             bloomPass = new THREE.UnrealBloomPass(
                 new THREE.Vector2(window.innerWidth, window.innerHeight),
-                1.0,  // Strength (Reduced)
+                1.0,  // Strength
                 0.3,  // Radius
-                0.5   // Threshold (Increased significantly to only bloom highlights)
+                0.95  // Threshold (Only bloom high-intensity elements)
             );
             composer.addPass(bloomPass);
             

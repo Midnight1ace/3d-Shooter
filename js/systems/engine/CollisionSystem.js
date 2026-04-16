@@ -141,8 +141,8 @@ export function createCollisionSystem({ state, config, refs, collections }) {
         box.getCenter(center);
         const half = size.multiplyScalar(0.5);
 
-        const colliderDesc = physics.rapier.ColliderDesc.cuboid(half.x, half.y, half.z)
-            .setTranslation(center.x, center.y, center.z)
+        const colliderDesc = physics.rapier.ColliderDesc.cuboid(half.x, 20, half.z)
+            .setTranslation(center.x, 0, center.z)
             .setFriction(1.3)
             .setRestitution(0);
 
