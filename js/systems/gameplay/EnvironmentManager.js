@@ -384,19 +384,25 @@ export function createEnvironmentManager({ state, refs, collections, ui, audio, 
             disposeOwnedResources(mesh);
             return false;
         }
-        collections.mapObstacles.push(mesh);
+collections.mapObstacles.push(mesh);
         refs.scene.add(mesh);
         createObstacleCollider(mesh);
+        if (collisionSystem?.rebuildObstacleSpatialGrid) {
+            collisionSystem.rebuildObstacleSpatialGrid();
+        }
         return true;
     }
 
-    function clearMapObstacles() {
+function clearMapObstacles() {
         collections.mapObstacles.forEach((obj) => {
             removeObstacleCollider(obj);
             refs.scene.remove(obj);
             disposeOwnedResources(obj);
         });
         collections.mapObstacles = [];
+        if (collisionSystem?.rebuildObstacleSpatialGrid) {
+            collisionSystem.rebuildObstacleSpatialGrid();
+        }
     }
 
     function createEnvironment() {

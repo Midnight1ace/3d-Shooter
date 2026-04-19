@@ -4,11 +4,17 @@ import { AuthSystem } from '../network/AuthSystem.js';
 
 export function createEntityManager({ state, config, refs, collections, ui, audio, collisionSystem, callbacks }) {
 
+    const MAX_ENEMIES = 25;
+    const CULL_DISTANCE = 60;
     const enemyPool = { normal: [], flanker: [], exploder: [] };
     const navigation = {
         pathfinding: null,
         zoneId: null
     };
+
+    // INSTANCED RENDERING SETUP
+    const INSTANCE_MAX = 250;
+    let _instanceManager = null;
 
     // Optimization: Pre-allocate reusable objects to prevent GC lag in update loop
     const _tempPlayerPos = new THREE.Vector3();
@@ -105,47 +111,16 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
     }
 
     function setFlankerLean(enemy, target, delta) {
-        if (!enemy?.mesh) return;
         const leanLerp = Math.min(1, delta * 10);
-        enemy.mesh.rotation.z += (target - enemy.mesh.rotation.z) * leanLerp;
+        enemy.lean = (enemy.lean || 0) + (target - (enemy.lean || 0)) * leanLerp;
     }
 
     function updateExploderFuseVisual(enemy, progress) {
-        const mesh = enemy?.mesh;
-        if (!mesh) return;
-        const clamped = Math.max(0, Math.min(1, progress));
-        const pulse = 0.55 + Math.sin((state.lowPowerMode ? 16 : 26) * clamped) * 0.45;
-        mesh.traverse((child) => {
-            if (!child.isMesh || !child.material) return;
-            const materials = Array.isArray(child.material) ? child.material : [child.material];
-            materials.forEach((material) => {
-                if (!material?.emissive) return;
-                material.emissive.setRGB(1, 0.05, 0.05);
-                material.emissiveIntensity = 0.3 + clamped * 1.25 + pulse * 0.35;
-            });
-        });
-        const baseScale = mesh.userData.baseScale || new THREE.Vector3(1, 1, 1);
-        const scaleBoost = 1 + clamped * 0.12 + pulse * 0.03;
-        mesh.scale.set(baseScale.x * scaleBoost, baseScale.y * scaleBoost, baseScale.z * scaleBoost);
+        // Handled in InstancedMesh logic
     }
 
     function resetExploderVisual(enemy) {
-        const mesh = enemy?.mesh;
-        if (!mesh) return;
-        mesh.traverse((child) => {
-            if (!child.isMesh || !child.material) return;
-            const materials = Array.isArray(child.material) ? child.material : [child.material];
-            materials.forEach((material) => {
-                if (!material?.emissive) return;
-                const baseEmissive = child.userData.baseEmissive || new THREE.Color(0x000000);
-                material.emissive.copy(baseEmissive);
-                material.emissiveIntensity = child.userData.baseEmissiveIntensity || 0;
-            });
-        });
-        const baseScale = mesh.userData.baseScale;
-        if (baseScale) {
-            mesh.scale.copy(baseScale);
-        }
+        // Redundant with InstancedMesh; reset via instance logic
     }
 
     function clearWaveTimers() {
@@ -343,6 +318,78 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
         navigation.pathfinding = pathfinding;
         navigation.zoneId = zoneId;
     }
+
+    function initInstanceManager() {
+        if (_instanceManager) return;
+        
+        
+        
+        const instancedMeshes = {};
+        const slots = new Uint8Array(INSTANCE_MAX); // 0 = free, 1 = occupied
+        
+        // Parts: torso, head, eyeL, eyeR, armL, armR, legL, legR, core (exploder only)
+        const parts = [
+            { name: 'torso', geo: new THREE.BoxGeometry(1.4, 1.8, 0.8), matType: 'body' },
+            { name: 'head', geo: new THREE.SphereGeometry(0.45, 10, 10), matType: 'body' },
+            { name: 'eyeL', geo: new THREE.SphereGeometry(0.08, 8, 8), matType: 'eye' },
+            { name: 'eyeR', geo: new THREE.SphereGeometry(0.08, 8, 8), matType: 'eye' },
+            { name: 'armL', geo: new THREE.BoxGeometry(0.35, 1.2, 0.35), matType: 'dark' },
+            { name: 'armR', geo: new THREE.BoxGeometry(0.35, 1.2, 0.35), matType: 'dark' },
+            { name: 'legL', geo: new THREE.BoxGeometry(0.4, 1.2, 0.4), matType: 'dark' },
+            { name: 'legR', geo: new THREE.BoxGeometry(0.4, 1.2, 0.4), matType: 'dark' },
+            { name: 'core', geo: new THREE.SphereGeometry(0.4, 10, 10), matType: 'core' }
+        ];
+
+        const materials = {
+            body: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5, metalness: 0.4 }),
+            eye: new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 2.0 }),
+            dark: new THREE.MeshStandardMaterial({ color: 0x2b2b2b, roughness: 0.8, metalness: 0.1 }),
+            core: new THREE.MeshStandardMaterial({ color: 0xff3333, emissive: 0xff0000, emissiveIntensity: 2.5 })
+        };
+
+        parts.forEach(part => {
+            const mat = materials[part.matType];
+            const imesh = new THREE.InstancedMesh(part.geo, mat, INSTANCE_MAX);
+            imesh.castShadow = !state.lowPowerMode;
+            imesh.receiveShadow = !state.lowPowerMode;
+            // Initialize with zero scale
+            const dummy = new THREE.Object3D();
+            dummy.scale.set(0, 0, 0);
+            dummy.updateMatrix();
+            for (let i = 0; i < INSTANCE_MAX; i++) {
+                imesh.setMatrixAt(i, dummy.matrix);
+            }
+            imesh.instanceMatrix.needsUpdate = true;
+            refs.scene.add(imesh);
+            instancedMeshes[part.name] = imesh;
+        });
+
+        _instanceManager = {
+            instancedMeshes,
+            slots,
+            allocateSlot() {
+                for (let i = 0; i < INSTANCE_MAX; i++) {
+                    if (slots[i] === 0) {
+                        slots[i] = 1;
+                        return i;
+                    }
+                }
+                return -1;
+            },
+            freeSlot(id) {
+                if (id >= 0 && id < INSTANCE_MAX) {
+                    slots[id] = 0;
+                    const dummy = new THREE.Object3D();
+                    dummy.scale.set(0, 0, 0);
+                    dummy.updateMatrix();
+                    Object.values(instancedMeshes).forEach(imesh => {
+                        imesh.setMatrixAt(id, dummy.matrix);
+                        imesh.instanceMatrix.needsUpdate = true;
+                    });
+                }
+            }
+        };
+    }
     function loadEnemyModel() {
         // Disabled by user request: Do not use zombies.glb file and reset to procedural enemies
         refs.enemyLoadFailed = true;
@@ -350,11 +397,23 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
     }
 
     function spawnEnemy(roleOverride = null) {
-        if (!refs.scene) return false;
+        if (!refs.scene) {
+            return false;
+        }
+        initInstanceManager();
+        
+        if (collections.enemies.length >= MAX_ENEMIES) {
+            waveState.pendingSpawns++;
+            return false;
+        }
 
         try {
             const role = roleOverride || pickArchetypeFromMix(waveState.spawnMix || getWaveSpawnMix(state.wave));
             const archetype = getEnemyArchetype(role);
+            const instanceId = _instanceManager.allocateSlot();
+            if (instanceId === -1) {
+                return false;
+            }
             const healthBoost = Math.min(65, state.wave * 6);
             const speedBoost = Math.min(0.028, state.wave * 0.0018);
             const waveHealthScale = role === 'exploder' ? 0.65 : 1;
@@ -366,60 +425,38 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
             const spawnZ = refs.camera.position.z + Math.sin(angle) * radius;
             const spawnY = 0.2;
 
-            let enemyData;
+            const enemyData = {
+                instanceId,
+                role,
+                archetype,
+                position: new THREE.Vector3(spawnX, spawnY, spawnZ),
+                rotation: 0,
+                health: Math.round(archetype.health + healthBoost * waveHealthScale),
+                speed: archetype.speed + speedBoost * waveSpeedScale,
+                lastAttack: 0,
+                aiState: 'chase',
+                strafeDir: Math.random() < 0.5 ? -1 : 1,
+                strafeSwitchTimer: randomBetween(1.5, 3),
+                closeBurstTimer: 0,
+                closeBurstCooldown: randomBetween(0.5, 1.2),
+                fuseTimer: 0,
+                fuseElapsed: 0,
+                hitTimer: 0,
+                isDying: false,
+                body: null,
+                collider: null
+            };
 
-            if (enemyPool[role] && enemyPool[role].length > 0) {
-                enemyData = enemyPool[role].pop();
-                enemyData.mesh.visible = true;
-                enemyData.mesh.position.set(spawnX, spawnY, spawnZ);
-                enemyData.isDying = false;
-                enemyData.health = Math.round(archetype.health + healthBoost * waveHealthScale);
-                enemyData.speed = archetype.speed + speedBoost * waveSpeedScale;
-                enemyData.aiState = 'chase';
-                enemyData.fuseTimer = 0;
-                enemyData.fuseElapsed = 0;
-                enemyData.hitTimer = 0;
-                
-                if (role === 'exploder') resetExploderVisual(enemyData);
-                playAnimation(enemyData, 'idle');
-                
-                const physicsData = createEnemyBody(enemyData.mesh, role);
-                enemyData.body = physicsData?.body || null;
-                enemyData.collider = physicsData?.collider || null;
-            } else {
-                const enemy = createEnemyInstance(role, archetype.color);
-                enemy.position.set(spawnX, spawnY, spawnZ);
-                enemy.castShadow = !state.lowPowerMode;
-                enemy.receiveShadow = !state.lowPowerMode;
-                attachShield(enemy);
-                refs.scene.add(enemy);
-                const physicsData = createEnemyBody(enemy, role);
-                
-                enemyData = {
-                    mesh: enemy,
-                    health: Math.round(archetype.health + healthBoost * waveHealthScale),
-                    speed: archetype.speed + speedBoost * waveSpeedScale,
-                    lastAttack: 0,
-                    role,
-                    archetype,
-                    aiState: 'chase',
-                    strafeDir: Math.random() < 0.5 ? -1 : 1,
-                    strafeSwitchTimer: randomBetween(1.5, 3),
-                    closeBurstTimer: 0,
-                    closeBurstCooldown: randomBetween(0.5, 1.2),
-                    fuseTimer: 0,
-                    fuseElapsed: 0,
-                    mixer: enemy.userData.mixer || null,
-                    animations: enemy.userData.animations || null,
-                    currentAction: null,
-                    hitTimer: 0,
-                    isDying: false,
-                    body: physicsData?.body || null,
-                    collider: physicsData?.collider || null
-                };
-            }
+            const physicsData = createEnemyBody(enemyData, role);
+            enemyData.body = physicsData?.body || null;
+            enemyData.collider = physicsData?.collider || null;
 
             collections.enemies.push(enemyData);
+            
+            if (collisionSystem?.rebuildEnemySpatialGrid) {
+                collisionSystem.rebuildEnemySpatialGrid();
+            }
+            
             ui.updateHUD();
             return true;
         } catch (error) {
@@ -429,24 +466,7 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
     }
 
     function createEnemyInstance(role, color) {
-        const archetype = getEnemyArchetype(role);
-        if (refs.enemyPrototype && refs.enemyAnimationsLoaded && THREE.SkeletonUtils) {
-            const model = THREE.SkeletonUtils.clone(refs.enemyPrototype);
-            model.scale.setScalar(archetype.scale || 1);
-            const mixer = new THREE.AnimationMixer(model);
-            const animations = {};
-            Object.keys(refs.enemyAnimationClips).forEach((name) => {
-                animations[name] = mixer.clipAction(refs.enemyAnimationClips[name]);
-            });
-            model.userData.mixer = mixer;
-            model.userData.animations = animations;
-            applyArchetypeVisuals(model, role);
-            playAnimation(model.userData, 'idle');
-            return model;
-        }
-        const model = createEnemyModel(role, color);
-        applyArchetypeVisuals(model, role);
-        return model;
+        return null; // Deprecated
     }
 
     function playAnimation(enemyData, name) {
@@ -474,14 +494,12 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
         enemy.isDying = true;
         setTimeout(() => {
             removeEnemyPhysics(enemy);
-            if (enemy.mesh) {
-                enemy.mesh.visible = false;
-                enemy.mesh.position.set(0, -100, 0);
-                enemyPool[enemy.role].push(enemy);
-            }
             const idx = collections.enemies.indexOf(enemy);
             if (idx >= 0) {
                 collections.enemies.splice(idx, 1);
+                if (collisionSystem?.rebuildEnemySpatialGrid) {
+                    collisionSystem.rebuildEnemySpatialGrid();
+                }
             }
             ui.updateHUD();
             maybeCompleteWave();
@@ -577,29 +595,22 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
         if (!enemy || enemy.isDying) return;
         const archetype = enemy.archetype || getEnemyArchetype(enemy.role);
 
-        createDeathEffect(enemy.mesh.position);
-        if (enemy.role === 'exploder') {
-            resetExploderVisual(enemy);
-        }
-
-        if (enemy.animations && enemy.animations.die) {
-            playAnimation(enemy, 'die');
-            scheduleEnemyRemoval(enemy, 1000);
-        } else {
-            removeEnemyPhysics(enemy);
-            enemy.mesh.visible = false;
-            enemy.mesh.position.set(0, -100, 0);
-            enemyPool[enemy.role].push(enemy);
-            collections.enemies.splice(index, 1);
+        createDeathEffect(enemy.position);
+        _instanceManager.freeSlot(enemy.instanceId);
+        removeEnemyPhysics(enemy);
+        collections.enemies.splice(index, 1);
+        
+        if (collisionSystem?.rebuildEnemySpatialGrid) {
+            collisionSystem.rebuildEnemySpatialGrid();
         }
 
         state.score += archetype.score || 100;
         if (state.activeMatchId) AuthSystem.recordKill(state.activeMatchId, enemy.role);
 
-        callbacks?.onEnemyDrop?.(enemy.mesh.position.clone());
+        callbacks?.onEnemyDrop?.(enemy.position.clone());
         ui.updateHUD();
         audio?.playUiSound?.('kill');
-        audio?.playPositionalSound?.('kill', enemy.mesh.position);
+        audio?.playPositionalSound?.('kill', enemy.position);
         callbacks?.onTriggerTimeSlow?.();
         maybeCompleteWave();
     }
@@ -610,17 +621,17 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
         if (!enemy || enemy.isDying) return;
         enemy.isDying = true;
         const archetype = enemy.archetype || getEnemyArchetype('exploder');
-        resetExploderVisual(enemy);
-        const position = enemy.mesh.position.clone();
+        const position = enemy.position.clone();
         createExplosionEffect(position);
         if (fromKill) {
             callbacks?.onEnemyDrop?.(position.clone());
         }
+        _instanceManager.freeSlot(enemy.instanceId);
         removeEnemyPhysics(enemy);
-        enemy.mesh.visible = false;
-        enemy.mesh.position.set(0, -100, 0);
-        enemyPool[enemy.role].push(enemy);
         collections.enemies.splice(index, 1);
+        if (collisionSystem?.rebuildEnemySpatialGrid) {
+            collisionSystem.rebuildEnemySpatialGrid();
+        }
 
         const blastRadius = archetype.blastRadius || 6;
         const distance = refs.camera.position.distanceTo(position);
@@ -724,8 +735,18 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
         ui.showPrompt(`Wave ${state.wave} incoming`, 1400);
     }
 
+    let _frameCounter = 0;
+    
     function updateEnemies(delta, timeScale = 1) {
         const now = Date.now();
+        
+        _frameCounter++;
+        if (_frameCounter >= 60) {
+            _frameCounter = 0;
+            if (collisionSystem?.rebuildEnemySpatialGrid && collections.enemies.length > 0) {
+                collisionSystem.rebuildEnemySpatialGrid();
+            }
+        }
         const scaledDelta = delta * timeScale;
         const physics = getPhysics();
         const world = physics?.world || null;
@@ -743,6 +764,17 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
             const enemy = collections.enemies[i];
             const archetype = enemy.archetype || getEnemyArchetype(enemy.role);
             enemy.archetype = archetype;
+            
+            let enemyPos;
+            if (usePhysics && enemy.body) {
+                const ep = enemy.body.translation();
+                enemyPos = _tempEnemyPos.set(ep.x, ep.y, ep.z);
+            } else {
+                enemyPos = enemy.position;
+            }
+            
+            const distToPlayer = playerPos.distanceTo(enemyPos);
+            const isFarAway = distToPlayer > CULL_DISTANCE;
 
             if (enemy.mixer) {
                 enemy.mixer.update(scaledDelta);
@@ -769,23 +801,39 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
                 }
             }
 
-            let enemyPos;
-            if (usePhysics && enemy.body) {
-                const ep = enemy.body.translation();
-                enemyPos = _tempEnemyPos.set(ep.x, ep.y, ep.z);
-            } else {
-                enemyPos = enemy.mesh.position;
-            }
-
             const direction = _tempDirection.subVectors(playerPos, enemyPos);
             direction.y = 0;
             const distance = direction.length();
             if (distance > 0.0001) { // Hard epsilon
                 direction.normalize();
-                enemy.mesh.rotation.y = Math.atan2(direction.x, direction.z);
+                enemy.rotation = Math.atan2(direction.x, direction.z);
             } else {
                 // If distance is effectively zero, use current rotation to avoid NaN
                 direction.set(0, 0, 0);
+            }
+
+            // FRUSTUM CULLING: Skip complex AI for distant enemies
+            if (isFarAway) {
+                const moveDirFar = _tempMoveDir.copy(direction);
+                const shouldMoveFar = distance > archetype.attackRange;
+                const shouldAttackFar = !shouldMoveFar;
+                
+                if (shouldMoveFar && moveDirFar.lengthSq() > 0.00001) {
+                    moveDirFar.normalize();
+                    const speed = enemy.speed * 60 * timeScale;
+                    if (usePhysics && enemy.body) {
+                        try {
+                            enemy.body.setLinvel({ x: moveDirFar.x * speed, y: 0, z: moveDirFar.z * speed }, true);
+                        } catch (error) {
+                            enemy.body = null;
+                            enemy.collider = null;
+                            enemy.position.addScaledVector(moveDirFar, enemy.speed * (delta * 60) * timeScale);
+                        }
+                    } else {
+                        enemy.position.addScaledVector(moveDirFar, enemy.speed * (delta * 60) * timeScale);
+                    }
+                }
+                continue;
             }
 
             const moveDir = _tempMoveDir.copy(direction);
@@ -873,12 +921,11 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
                     } catch (error) {
                         enemy.body = null;
                         enemy.collider = null;
-                        enemy.mesh.position.addScaledVector(moveDir, enemy.speed * (delta * 60) * timeScale);
+                        enemy.position.addScaledVector(moveDir, enemy.speed * (delta * 60) * timeScale);
                     }
                 } else {
-                    enemy.mesh.position.addScaledVector(moveDir, enemy.speed * (delta * 60) * timeScale);
+                    enemy.position.addScaledVector(moveDir, enemy.speed * (delta * 60) * timeScale);
                 }
-                if (enemy.animations) playAnimation(enemy, 'run');
             } else {
                 if (usePhysics && enemy.body) {
                     try {
@@ -886,13 +933,6 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
                     } catch (error) {
                         enemy.body = null;
                         enemy.collider = null;
-                    }
-                }
-                if (enemy.animations) {
-                    if (archetype.id === 'exploder' && enemy.aiState === 'explode') {
-                        playAnimation(enemy, 'idle');
-                    } else {
-                        playAnimation(enemy, 'attack');
                     }
                 }
             }
@@ -905,20 +945,129 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
                 if (canHit && now - enemy.lastAttack > archetype.attackCooldown) {
                     enemy.lastAttack = now;
                     const damage = Math.max(1, Math.round(config.enemyDamage * archetype.damageMultiplier));
-                    callbacks?.onPlayerDamage?.(damage, enemy.mesh.position);
+                    callbacks?.onPlayerDamage?.(damage, enemyPos);
                 }
             }
 
             if (!usePhysics || !enemy.body) {
                 resolveEnemyCollisions(enemy);
             }
+            
+            updateEnemyInstanceMatrix(enemy, enemyPos);
+        }
+        
+        if (_instanceManager) {
+            Object.values(_instanceManager.instancedMeshes).forEach(imesh => {
+                imesh.instanceMatrix.needsUpdate = true;
+            });
+        }
+    }
+
+    const _dummyInstance = new THREE.Object3D();
+    const _hitColor = new THREE.Color(0xff4444);
+    const _whiteColor = new THREE.Color(0xffffff);
+
+    function updateEnemyInstanceMatrix(enemy, pos) {
+        if (!_instanceManager) return;
+        const arc = enemy.archetype;
+        const scale = arc.scale || 1;
+        const id = enemy.instanceId;
+        const yaw = enemy.rotation || 0;
+        const lean = enemy.lean || 0;
+        
+        let visualScale = scale;
+        let visualColor = new THREE.Color(arc.color);
+
+        // Fuse visual for exploders
+        if (enemy.role === 'exploder' && enemy.aiState === 'explode') {
+            const progress = 1 - (enemy.fuseTimer / (arc.fuseDuration || 1));
+            const pulse = 0.55 + Math.sin(26 * progress) * 0.45;
+            visualScale *= (1 + progress * 0.12 + pulse * 0.03);
+            visualColor.lerp(_hitColor, progress * 0.8);
+        }
+
+        // Hit flash
+        if (enemy.hitTimer > 0) {
+            visualColor.lerp(_whiteColor, 0.4);
+            visualScale *= 1.05;
+        }
+
+        const imeshes = _instanceManager.instancedMeshes;
+        _dummyInstance.rotation.set(0, yaw, lean);
+        _dummyInstance.scale.set(visualScale, visualScale, visualScale);
+        
+        // torso
+        _dummyInstance.position.set(pos.x, pos.y + 1.4 * visualScale, pos.z);
+        _dummyInstance.updateMatrix();
+        imeshes.torso.setMatrixAt(id, _dummyInstance.matrix);
+        
+        // head
+        _dummyInstance.position.set(pos.x, pos.y + 2.6 * visualScale, pos.z);
+        _dummyInstance.updateMatrix();
+        imeshes.head.setMatrixAt(id, _dummyInstance.matrix);
+        
+        // eyes
+        const eyeOffset = 0.35 * visualScale;
+        _dummyInstance.position.set(pos.x, pos.y + 2.7 * visualScale, pos.z);
+        _dummyInstance.rotation.set(0, yaw, 0);
+        
+        // eyeL
+        _dummyInstance.translateX(-0.18 * visualScale);
+        _dummyInstance.translateZ(eyeOffset);
+        _dummyInstance.updateMatrix();
+        imeshes.eyeL.setMatrixAt(id, _dummyInstance.matrix);
+        
+        // eyeR
+        _dummyInstance.rotation.set(0, yaw, 0); 
+        _dummyInstance.position.set(pos.x, pos.y + 2.7 * visualScale, pos.z);
+        _dummyInstance.translateX(0.18 * visualScale);
+        _dummyInstance.translateZ(eyeOffset);
+        _dummyInstance.updateMatrix();
+        imeshes.eyeR.setMatrixAt(id, _dummyInstance.matrix);
+        
+        // arms & legs
+        _dummyInstance.rotation.set(0, yaw, 0);
+        _dummyInstance.position.set(pos.x, pos.y + 1.4 * visualScale, pos.z);
+        _dummyInstance.translateX(-0.9 * visualScale);
+        _dummyInstance.updateMatrix();
+        imeshes.armL.setMatrixAt(id, _dummyInstance.matrix);
+        
+        _dummyInstance.rotation.set(0, yaw, 0);
+        _dummyInstance.position.set(pos.x, pos.y + 1.4 * visualScale, pos.z);
+        _dummyInstance.translateX(0.9 * visualScale);
+        _dummyInstance.updateMatrix();
+        imeshes.armR.setMatrixAt(id, _dummyInstance.matrix);
+        
+        _dummyInstance.rotation.set(0, yaw, 0);
+        _dummyInstance.position.set(pos.x, pos.y + 0.4 * visualScale, pos.z);
+        _dummyInstance.translateX(-0.4 * visualScale);
+        _dummyInstance.updateMatrix();
+        imeshes.legL.setMatrixAt(id, _dummyInstance.matrix);
+        
+        _dummyInstance.rotation.set(0, yaw, 0);
+        _dummyInstance.position.set(pos.x, pos.y + 0.4 * visualScale, pos.z);
+        _dummyInstance.translateX(0.4 * visualScale);
+        _dummyInstance.updateMatrix();
+        imeshes.legR.setMatrixAt(id, _dummyInstance.matrix);
+        
+        // core
+        if (enemy.role === 'exploder') {
+            _dummyInstance.rotation.set(0, yaw, 0);
+            _dummyInstance.position.set(pos.x, pos.y + 1.4 * visualScale, pos.z);
+            _dummyInstance.translateZ(0.55 * visualScale);
+            _dummyInstance.updateMatrix();
+            imeshes.core.setMatrixAt(id, _dummyInstance.matrix);
+        } else {
+            _dummyInstance.scale.set(0, 0, 0);
+            _dummyInstance.updateMatrix();
+            imeshes.core.setMatrixAt(id, _dummyInstance.matrix);
         }
     }
 
     function resolveEnemyCollisions(enemy) {
         if (!collections.mapObstacles.length) return;
         const radius = getEnemyRadius(enemy.role);
-        const pos = enemy.mesh.position;
+        const pos = enemy.position;
         const enemyY = pos.y;
 
         for (let i = 0; i < collections.mapObstacles.length; i++) {
@@ -958,8 +1107,8 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
         for (let i = collections.enemies.length - 1; i >= 0; i--) {
             const enemy = collections.enemies[i];
             if (!enemy?.body) continue;
-            const pos = enemy.body.translation();
-            enemy.mesh.position.set(pos.x, pos.y, pos.z);
+            const t = enemy.body.translation();
+            enemy.position.set(t.x, t.y, t.z);
         }
     }
 
@@ -984,35 +1133,9 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
         return false;
     }
 
-    function flashEnemy(enemyMesh) {
-        enemyMesh.traverse((child) => {
-            if (!child.isMesh || !child.material) return;
-            const materials = Array.isArray(child.material) ? child.material : [child.material];
-            materials.forEach((material) => {
-                if (!material?.emissive) return;
-                if (!child.userData.baseEmissive) {
-                    child.userData.baseEmissive = material.emissive
-                        ? material.emissive.clone()
-                        : new THREE.Color(0x000000);
-                    child.userData.baseEmissiveIntensity = material.emissiveIntensity || 0;
-                }
-                material.emissive = new THREE.Color(0xff0000);
-                material.emissiveIntensity = 0.5;
-            });
-        });
-
-        setTimeout(() => {
-            enemyMesh.traverse((child) => {
-                if (!child.isMesh || !child.material) return;
-                const materials = Array.isArray(child.material) ? child.material : [child.material];
-                materials.forEach((material) => {
-                    if (!material?.emissive) return;
-                    const baseEmissive = child.userData.baseEmissive || new THREE.Color(0x000000);
-                    material.emissive = baseEmissive.clone();
-                    material.emissiveIntensity = child.userData.baseEmissiveIntensity || 0;
-                });
-            });
-        }, 100);
+    function flashEnemy(enemyData) {
+        if (!enemyData) return;
+        enemyData.hitTimer = 0.12;
     }
 
     function createHitEffect(position) {

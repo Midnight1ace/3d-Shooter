@@ -259,9 +259,6 @@ function clearEnemies() {
                 refs.physics.world.removeRigidBody(bodyHandle);
             }
         }
-        if (enemy?.mesh) {
-            refs.scene?.remove(enemy.mesh);
-        }
     });
     collections.enemies.length = 0;
     ui.updateHUD();
@@ -618,21 +615,20 @@ function startGame() {
         });
     }
 
-    // Reset game state
-    state.score = 0;
-    state.wave = 1;
-    resetRunStats();
-    const activeWeapon = weaponSystem.getWeapon();
-    if (activeWeapon) {
-        activeWeapon.isReloading = false;
-        activeWeapon.canShoot = true;
-    }
-    weaponSystem.cancelReload();
+     // Reset game state
+     state.score = 0;
+     state.wave = 1;
+     resetRunStats();
+     weaponSystem.cancelReload();
     
     // Clear existing enemies
     clearEnemies();
     environmentManager?.clearPickups?.();
     clearActiveParticles();
+    
+    if (collisionSystem?.rebuildAllSpatialGrids) {
+        collisionSystem.rebuildAllSpatialGrids();
+    }
     
     // Reset camera
     camera.position.set(0, Config.playerHeight, 0);
@@ -703,21 +699,20 @@ function restartGame() {
         });
     }
 
-    // Reset game state
-    state.score = 0;
-    state.wave = 1;
-    resetRunStats();
-    const activeWeapon = weaponSystem.getWeapon();
-    if (activeWeapon) {
-        activeWeapon.isReloading = false;
-        activeWeapon.canShoot = true;
-    }
-    weaponSystem.cancelReload();
+     // Reset game state
+     state.score = 0;
+     state.wave = 1;
+     resetRunStats();
+     weaponSystem.cancelReload();
     
     // Clear existing enemies
     clearEnemies();
     environmentManager?.clearPickups?.();
     clearActiveParticles();
+    
+    if (collisionSystem?.rebuildAllSpatialGrids) {
+        collisionSystem.rebuildAllSpatialGrids();
+    }
     
     // Reset camera
     camera.position.set(0, Config.playerHeight, 0);
@@ -809,7 +804,7 @@ function animateFrame() {
         
         if (state.phase === GamePhase.PLAYING) {
             effectsSystem.updateTimeScale(delta);
-            
+
             if (state.hitStopTimer > 0) {
                 state.hitStopTimer = Math.max(0, state.hitStopTimer - delta);
             } else {
@@ -820,6 +815,7 @@ function animateFrame() {
                 entityManager.syncEnemyBodies();
                 physicsSystem.syncPlayerFromPhysics(camera, refs.player);
                 effectsSystem.updateParticles(scaledDelta);
+                weaponSystem.update(scaledDelta);
                 weaponSystem.updateReloadIndicator();
 
                 if (refs.shieldUniforms) {

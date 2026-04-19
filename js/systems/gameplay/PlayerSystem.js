@@ -81,7 +81,8 @@ export function createPlayerSystem({ state, refs, collections, dom, camera, inpu
         const body = refs.physics?.playerBody;
         if (body) {
             try {
-                body.setLinvel({ x: player.velocity.x, y: 0, z: player.velocity.z }, true);
+                // Create fresh velocity object to avoid Rapier aliasing error
+                body.setLinvel({ x: player.velocity.x * 1.0, y: 0.0, z: player.velocity.z * 1.0 }, true);
             } catch (error) {
                 callbacks?.onPhysicsError?.('Player movement physics failed. Falling back to non-physics movement.', error);
                 const desiredPosition = camera.position.clone().addScaledVector(player.velocity, delta);
@@ -146,6 +147,19 @@ export function createPlayerSystem({ state, refs, collections, dom, camera, inpu
     }
 
     function resolvePlayerCollisions(position) {
+        if (!collisionSystem) {
+            return position;
+        }
+        // Rebuild grids if needed before resolving
+        if (collisionSystem.rebuildEnemySpatialGrid && collections.enemies.length > 0) {
+            collisionSystem.rebuildEnemySpatialGrid();
+        }
+        if (collisionSystem.rebuildObstacleSpatialGrid && collections.mapObstacles.length > 0) {
+            collisionSystem.rebuildObstacleSpatialGrid();
+        }
+        if (!collisionSystem.resolvePlayerWorldCollision) {
+            return position;
+        }
         return collisionSystem.resolvePlayerWorldCollision(position, Config.playerRadius, Config.playerHeight);
     }
 
