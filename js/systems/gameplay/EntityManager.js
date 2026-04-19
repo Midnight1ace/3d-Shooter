@@ -9,6 +9,13 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
         pathfinding: null,
         zoneId: null
     };
+
+    // Optimization: Pre-allocate reusable objects to prevent GC lag in update loop
+    const _tempPlayerPos = new THREE.Vector3();
+    const _tempEnemyPos = new THREE.Vector3();
+    const _tempDirection = new THREE.Vector3();
+    const _tempMoveDir = new THREE.Vector3();
+    const _tempTangent = new THREE.Vector3();
     const waveState = {
         spawnTimers: new Set(),
         clearTimer: null,
@@ -322,52 +329,9 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
         navigation.zoneId = zoneId;
     }
     function loadEnemyModel() {
-        if (refs.enemyAnimationsLoaded || refs.enemyLoadFailed) return;
-        if (!THREE.GLTFLoader) {
-            console.warn('GLTFLoader not available. Falling back to procedural enemies.');
-            refs.enemyLoadFailed = true;
-            return;
-        }
-
-        const loader = new THREE.GLTFLoader();
-        loader.load(
-            'assets/polyart_zombies_with_animations_free_pack.glb',
-            (gltf) => {
-                refs.enemyPrototype = gltf.scene;
-                
-                // Normalize the enemy prototype: center on XZ and scale to ~1.7m height
-                const box = new THREE.Box3().setFromObject(refs.enemyPrototype);
-                const size = new THREE.Vector3();
-                box.getSize(size);
-                const scale = 1.7 / (size.y || 1);
-                refs.enemyPrototype.scale.setScalar(scale);
-                
-                // Apply centering
-                const centeredBox = new THREE.Box3().setFromObject(refs.enemyPrototype);
-                const center = centeredBox.getCenter(new THREE.Vector3());
-                refs.enemyPrototype.position.x -= center.x;
-                refs.enemyPrototype.position.z -= center.z;
-                refs.enemyPrototype.position.y -= centeredBox.min.y;
-
-                refs.enemyPrototype.traverse((child) => {
-                    if (child.isMesh) {
-                        child.castShadow = !state.lowPowerMode;
-                        child.receiveShadow = !state.lowPowerMode;
-                    }
-                });
-                refs.enemyAnimationClips = {};
-                gltf.animations.forEach((clip) => {
-                    refs.enemyAnimationClips[clip.name.toLowerCase()] = clip;
-                });
-                refs.enemyAnimationsLoaded = true;
-                console.log('Enemy model loaded with animations:', Object.keys(refs.enemyAnimationClips));
-            },
-            undefined,
-            (error) => {
-                console.warn('Failed to load enemy model. Using procedural enemies.', error);
-                refs.enemyLoadFailed = true;
-            }
-        );
+        // Disabled by user request: Do not use zombies.glb file and reset to procedural enemies
+        refs.enemyLoadFailed = true;
+        console.warn('Skipping zombie.glb loading. Falling back to procedural enemies.');
     }
 
     function spawnEnemy(roleOverride = null) {
@@ -752,13 +716,13 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
         const world = physics?.world || null;
         const usePhysics = Boolean(world);
         const playerCollider = physics?.playerCollider || null;
-        const playerPos = physics?.playerBody
-            ? new THREE.Vector3(
-                physics.playerBody.translation().x,
-                physics.playerBody.translation().y,
-                physics.playerBody.translation().z
-            )
-            : refs.camera.position;
+        let playerPos;
+        if (physics?.playerBody) {
+            const t = physics.playerBody.translation();
+            playerPos = _tempPlayerPos.set(t.x, t.y, t.z);
+        } else {
+            playerPos = refs.camera.position;
+        }
 
         for (let i = collections.enemies.length - 1; i >= 0; i--) {
             const enemy = collections.enemies[i];
@@ -790,10 +754,15 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
                 }
             }
 
-            const enemyPos = (usePhysics && enemy.body)
-                ? new THREE.Vector3(enemy.body.translation().x, enemy.body.translation().y, enemy.body.translation().z)
-                : enemy.mesh.position.clone();
-            const direction = new THREE.Vector3().subVectors(playerPos, enemyPos);
+            let enemyPos;
+            if (usePhysics && enemy.body) {
+                const ep = enemy.body.translation();
+                enemyPos = _tempEnemyPos.set(ep.x, ep.y, ep.z);
+            } else {
+                enemyPos = enemy.mesh.position;
+            }
+
+            const direction = _tempDirection.subVectors(playerPos, enemyPos);
             direction.y = 0;
             const distance = direction.length();
             if (distance > 0.001) {
@@ -801,7 +770,7 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
                 enemy.mesh.rotation.y = Math.atan2(direction.x, direction.z);
             }
 
-            let moveDir = direction.clone();
+            const moveDir = _tempMoveDir.copy(direction);
             let shouldMove = distance > archetype.attackRange;
             let shouldAttack = !shouldMove;
             let targetLean = 0;
@@ -823,16 +792,16 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
 
                     if (enemy.closeBurstTimer > 0) {
                         enemy.closeBurstTimer -= scaledDelta;
-                        moveDir = direction.clone();
+                        moveDir.copy(direction);
                     } else {
                         const startBurstChance = archetype.closeBurstChancePerSec * scaledDelta;
                         if (enemy.closeBurstCooldown <= 0 && Math.random() < startBurstChance) {
                             enemy.closeBurstTimer = randomBetween(archetype.closeBurstMin, archetype.closeBurstMax);
                             enemy.closeBurstCooldown = randomBetween(archetype.closeBurstCooldownMin, archetype.closeBurstCooldownMax);
-                            moveDir = direction.clone();
+                            moveDir.copy(direction);
                         } else {
-                            const tangent = new THREE.Vector3(-direction.z, 0, direction.x).multiplyScalar(enemy.strafeDir || 1);
-                            moveDir = tangent.add(direction.clone().multiplyScalar(archetype.strafeForwardBias)).normalize();
+                            const tangent = _tempTangent.set(-direction.z, 0, direction.x).multiplyScalar(enemy.strafeDir || 1);
+                            moveDir.copy(tangent).addScaledVector(direction, archetype.strafeForwardBias).normalize();
                             targetLean = -(enemy.strafeDir || 1) * archetype.leanAngle;
                         }
                     }

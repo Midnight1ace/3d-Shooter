@@ -14,7 +14,8 @@ export function createPlayerSystem({ state, refs, collections, dom, camera, inpu
             pitch: 0,
             viewOffsetY: 0,
             lastPosition: null,
-            hackWarnings: 0
+            hackWarnings: 0,
+            radius: Config.playerRadius
         };
         refs.player = player;
         return player;
