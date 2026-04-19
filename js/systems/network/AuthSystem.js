@@ -68,20 +68,59 @@ export const AuthSystem = {
         }
     },
 
-    async submitScore(username, score, wave) {
+    async startMatch() {
+        try {
+            const headers = { 'Content-Type': 'application/json' };
+            if (this.user && this.user.token) {
+                headers['Authorization'] = `Bearer ${this.user.token}`;
+            } else {
+                return { ok: false, error: 'Not logged in' };
+            }
+            const response = await fetch('/api/match/start', {
+                method: 'POST',
+                headers
+            });
+            return await response.json();
+        } catch (error) {
+            console.error('Failed to start match:', error);
+            return { ok: false, error: 'Network error' };
+        }
+    },
+
+    async recordKill(matchId, role) {
+        if (!matchId) return { ok: false };
         try {
             const headers = { 'Content-Type': 'application/json' };
             if (this.user && this.user.token) {
                 headers['Authorization'] = `Bearer ${this.user.token}`;
             }
-            const response = await fetch('/api/leaderboard', {
+            const response = await fetch('/api/match/kill', {
                 method: 'POST',
                 headers,
-                body: JSON.stringify({ username, score, wave })
+                body: JSON.stringify({ matchId, role })
             });
             return await response.json();
         } catch (error) {
-            console.error('Failed to submit score:', error);
+            console.error('Failed to record kill:', error);
+            return { ok: false, error: 'Network error' };
+        }
+    },
+
+    async endMatch(matchId, wave) {
+        if (!matchId) return { ok: false };
+        try {
+            const headers = { 'Content-Type': 'application/json' };
+            if (this.user && this.user.token) {
+                headers['Authorization'] = `Bearer ${this.user.token}`;
+            }
+            const response = await fetch('/api/match/end', {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ matchId, wave })
+            });
+            return await response.json();
+        } catch (error) {
+            console.error('Failed to end match:', error);
             return { ok: false, error: 'Network error' };
         }
     }

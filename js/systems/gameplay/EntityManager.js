@@ -1,8 +1,10 @@
 import { GamePhase } from '../../core/config.js';
 import { EnemyArchetypes } from '../../core/archetypes.js';
+import { AuthSystem } from '../network/AuthSystem.js';
 
 export function createEntityManager({ state, config, refs, collections, ui, audio, collisionSystem, callbacks }) {
 
+    const enemyPool = { normal: [], flanker: [], exploder: [] };
     const navigation = {
         pathfinding: null,
         zoneId: null
@@ -369,10 +371,7 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
     }
 
     function spawnEnemy(roleOverride = null) {
-        if (!refs.scene) {
-            console.error('ERROR: scene is undefined!');
-            return false;
-        }
+        if (!refs.scene) return false;
 
         try {
             const role = roleOverride || pickArchetypeFromMix(waveState.spawnMix || getWaveSpawnMix(state.wave));
@@ -382,41 +381,66 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
             const waveHealthScale = role === 'exploder' ? 0.65 : 1;
             const waveSpeedScale = role === 'exploder' ? 0.6 : 1;
 
-            const enemy = createEnemyInstance(role, archetype.color);
-
             const angle = Math.random() * Math.PI * 2;
             const radius = 25 + Math.random() * 30;
-            enemy.position.x = refs.camera.position.x + Math.cos(angle) * radius;
-            enemy.position.z = refs.camera.position.z + Math.sin(angle) * radius;
-            enemy.position.y = 0.2;
-            enemy.castShadow = !state.lowPowerMode;
-            enemy.receiveShadow = !state.lowPowerMode;
+            const spawnX = refs.camera.position.x + Math.cos(angle) * radius;
+            const spawnZ = refs.camera.position.z + Math.sin(angle) * radius;
+            const spawnY = 0.2;
 
-            attachShield(enemy);
-            refs.scene.add(enemy);
-            const physicsData = createEnemyBody(enemy, role);
-            collections.enemies.push({
-                mesh: enemy,
-                health: Math.round(archetype.health + healthBoost * waveHealthScale),
-                speed: archetype.speed + speedBoost * waveSpeedScale,
-                lastAttack: 0,
-                role,
-                archetype,
-                aiState: 'chase',
-                strafeDir: Math.random() < 0.5 ? -1 : 1,
-                strafeSwitchTimer: randomBetween(1.5, 3),
-                closeBurstTimer: 0,
-                closeBurstCooldown: randomBetween(0.5, 1.2),
-                fuseTimer: 0,
-                fuseElapsed: 0,
-                mixer: enemy.userData.mixer || null,
-                animations: enemy.userData.animations || null,
-                currentAction: null,
-                hitTimer: 0,
-                isDying: false,
-                body: physicsData?.body || null,
-                collider: physicsData?.collider || null
-            });
+            let enemyData;
+
+            if (enemyPool[role] && enemyPool[role].length > 0) {
+                enemyData = enemyPool[role].pop();
+                enemyData.mesh.visible = true;
+                enemyData.mesh.position.set(spawnX, spawnY, spawnZ);
+                enemyData.isDying = false;
+                enemyData.health = Math.round(archetype.health + healthBoost * waveHealthScale);
+                enemyData.speed = archetype.speed + speedBoost * waveSpeedScale;
+                enemyData.aiState = 'chase';
+                enemyData.fuseTimer = 0;
+                enemyData.fuseElapsed = 0;
+                enemyData.hitTimer = 0;
+                
+                if (role === 'exploder') resetExploderVisual(enemyData);
+                playAnimation(enemyData, 'idle');
+                
+                const physicsData = createEnemyBody(enemyData.mesh, role);
+                enemyData.body = physicsData?.body || null;
+                enemyData.collider = physicsData?.collider || null;
+            } else {
+                const enemy = createEnemyInstance(role, archetype.color);
+                enemy.position.set(spawnX, spawnY, spawnZ);
+                enemy.castShadow = !state.lowPowerMode;
+                enemy.receiveShadow = !state.lowPowerMode;
+                attachShield(enemy);
+                refs.scene.add(enemy);
+                const physicsData = createEnemyBody(enemy, role);
+                
+                enemyData = {
+                    mesh: enemy,
+                    health: Math.round(archetype.health + healthBoost * waveHealthScale),
+                    speed: archetype.speed + speedBoost * waveSpeedScale,
+                    lastAttack: 0,
+                    role,
+                    archetype,
+                    aiState: 'chase',
+                    strafeDir: Math.random() < 0.5 ? -1 : 1,
+                    strafeSwitchTimer: randomBetween(1.5, 3),
+                    closeBurstTimer: 0,
+                    closeBurstCooldown: randomBetween(0.5, 1.2),
+                    fuseTimer: 0,
+                    fuseElapsed: 0,
+                    mixer: enemy.userData.mixer || null,
+                    animations: enemy.userData.animations || null,
+                    currentAction: null,
+                    hitTimer: 0,
+                    isDying: false,
+                    body: physicsData?.body || null,
+                    collider: physicsData?.collider || null
+                };
+            }
+
+            collections.enemies.push(enemyData);
             ui.updateHUD();
             return true;
         } catch (error) {
@@ -472,7 +496,9 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
         setTimeout(() => {
             removeEnemyPhysics(enemy);
             if (enemy.mesh) {
-                refs.scene.remove(enemy.mesh);
+                enemy.mesh.visible = false;
+                enemy.mesh.position.set(0, -100, 0);
+                enemyPool[enemy.role].push(enemy);
             }
             const idx = collections.enemies.indexOf(enemy);
             if (idx >= 0) {
@@ -582,11 +608,15 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
             scheduleEnemyRemoval(enemy, 1000);
         } else {
             removeEnemyPhysics(enemy);
-            refs.scene.remove(enemy.mesh);
+            enemy.mesh.visible = false;
+            enemy.mesh.position.set(0, -100, 0);
+            enemyPool[enemy.role].push(enemy);
             collections.enemies.splice(index, 1);
         }
 
         state.score += archetype.score || 100;
+        if (state.activeMatchId) AuthSystem.recordKill(state.activeMatchId, enemy.role);
+
         callbacks?.onEnemyDrop?.(enemy.mesh.position.clone());
         ui.updateHUD();
         audio?.playUiSound?.('kill');
@@ -608,7 +638,9 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
             callbacks?.onEnemyDrop?.(position.clone());
         }
         removeEnemyPhysics(enemy);
-        refs.scene.remove(enemy.mesh);
+        enemy.mesh.visible = false;
+        enemy.mesh.position.set(0, -100, 0);
+        enemyPool[enemy.role].push(enemy);
         collections.enemies.splice(index, 1);
 
         const blastRadius = archetype.blastRadius || 6;
@@ -621,6 +653,7 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
 
         if (!fromKill) {
             state.score += Math.max(25, Math.round((archetype.score || 90) * 0.5));
+            if (state.activeMatchId) AuthSystem.recordKill(state.activeMatchId, enemy.role);
         }
         ui.updateHUD();
         audio?.playUiSound?.('damage');

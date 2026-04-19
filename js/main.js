@@ -551,6 +551,15 @@ function buyAmmo(cost, source) {
     const currentWeapon = weaponSystem.getWeapon();
     if (!currentWeapon) return;
     const isFreeRefill = !state.freeAmmoUsed && state.score < 50;
+
+    if (state.reserveAmmo === 0 && state.score < cost && !isFreeRefill) {
+        state.reserveAmmo = state.maxAmmo * 2;
+        weaponSystem.syncWeaponInventory();
+        ui.updateHUD();
+        ui.showPrompt('Emergency Ammo Supplied', 1500);
+        return;
+    }
+
     const effectiveCost = isFreeRefill ? 0 : cost;
     if (state.score < effectiveCost) {
         ui.showPrompt('Not enough credits', 1200);
@@ -601,6 +610,14 @@ function startGame() {
     dom.hud?.classList.remove('hidden');
     audio.ensureAudioContext();
     
+    // Auth Server Match
+    state.activeMatchId = null;
+    if (AuthSystem.user) {
+        AuthSystem.startMatch().then(res => {
+            if (res.ok) state.activeMatchId = res.matchId;
+        });
+    }
+
     // Reset game state
     state.score = 0;
     state.wave = 1;
@@ -678,6 +695,14 @@ function restartGame() {
     dom.gameOverScreen?.classList.add('hidden');
     dom.hud?.classList.remove('hidden');
     
+    // Auth Server Match
+    state.activeMatchId = null;
+    if (AuthSystem.user) {
+        AuthSystem.startMatch().then(res => {
+            if (res.ok) state.activeMatchId = res.matchId;
+        });
+    }
+
     // Reset game state
     state.score = 0;
     state.wave = 1;
@@ -737,10 +762,11 @@ function gameOver() {
     dom.restartGameButton?.focus();
 
     // Submit score if logged in
-    if (AuthSystem.user?.username) {
-        AuthSystem.submitScore(AuthSystem.user.username, state.score, state.wave).then(res => {
-            if (res.ok) ui.showPrompt('Score submitted!', 2000);
+    if (AuthSystem.user?.username && state.activeMatchId) {
+        AuthSystem.endMatch(state.activeMatchId, state.wave).then(res => {
+            if (res.ok) ui.showPrompt(`Score submitted! Server verified: ${res.score}`, 3000);
         });
+        state.activeMatchId = null;
     }
 }
 

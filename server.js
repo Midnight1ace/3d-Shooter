@@ -3,9 +3,45 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
 const crypto = require('crypto');
+const Database = require('better-sqlite3');
 
 const PORT = 3000;
-const ACTIVE_SESSIONS = new Map();
+const dbDir = path.join(process.cwd(), 'data');
+if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
+const db = new Database(path.join(dbDir, 'data.sqlite'));
+db.pragma('journal_mode = WAL');
+
+db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE,
+        salt TEXT,
+        hash TEXT
+    );
+    CREATE TABLE IF NOT EXISTS sessions (
+        token TEXT PRIMARY KEY,
+        username TEXT,
+        expires_at INTEGER
+    );
+    CREATE TABLE IF NOT EXISTS leaderboard (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT,
+        score INTEGER,
+        wave INTEGER,
+        date TEXT
+    );
+    CREATE TABLE IF NOT EXISTS matches (
+        match_id TEXT PRIMARY KEY,
+        username TEXT,
+        score INTEGER,
+        status TEXT,
+        created_at INTEGER
+    );
+`);
+
+setInterval(() => {
+    db.prepare("DELETE FROM sessions WHERE expires_at < ?").run(Date.now());
+}, 60 * 60 * 1000);
 const LOG_DIR = path.join(process.cwd(), 'reports', 'runtime-logs');
 const MAX_LOG_PAYLOAD_BYTES = 2 * 1024 * 1024;
 
@@ -59,30 +95,32 @@ function sendJson(res, statusCode, payload) {
 
 const server = http.createServer(async (req, res) => {
     // API Endpoints
+    // Validate session utility
+    const getSession = (req) => {
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+        const token = authHeader.split(' ')[1];
+        const row = db.prepare("SELECT username FROM sessions WHERE token = ? AND expires_at > ?").get(token, Date.now());
+        return row ? { username: row.username, token } : null;
+    };
+
     if (req.method === 'POST' && req.url === '/api/register') {
         let body = '';
         req.on('data', chunk => { body += chunk; });
-        req.on('end', async () => {
+        req.on('end', () => {
             try {
                 const { username, password } = JSON.parse(body);
                 if (!username || !password) return sendJson(res, 400, { ok: false, error: 'Missing fields' });
                 
-                const usersPath = path.join(process.cwd(), 'data', 'users.json');
-                let users = [];
-                try {
-                    const data = await fsp.readFile(usersPath, 'utf8');
-                    users = JSON.parse(data);
-                } catch (e) { /* ignore if file doesn't exist */ }
-
-                if (users.find(u => u.username === username)) {
+                const existing = db.prepare("SELECT id FROM users WHERE username = ?").get(username);
+                if (existing) {
                     return sendJson(res, 400, { ok: false, error: 'User already exists' });
                 }
 
                 const salt = crypto.randomBytes(16).toString('hex');
                 const hash = crypto.scryptSync(password, salt, 64).toString('hex');
 
-                users.push({ username, salt, hash });
-                await fsp.writeFile(usersPath, JSON.stringify(users, null, 2));
+                db.prepare("INSERT INTO users (username, salt, hash) VALUES (?, ?, ?)").run(username, salt, hash);
                 sendJson(res, 200, { ok: true, message: 'Registered successfully' });
             } catch (e) { sendJson(res, 500, { ok: false, error: e.message }); }
         });
@@ -92,19 +130,17 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && req.url === '/api/login') {
         let body = '';
         req.on('data', chunk => { body += chunk; });
-        req.on('end', async () => {
+        req.on('end', () => {
             try {
                 const { username, password } = JSON.parse(body);
-                const usersPath = path.join(process.cwd(), 'data', 'users.json');
-                const data = await fsp.readFile(usersPath, 'utf8');
-                const users = JSON.parse(data);
-                const user = users.find(u => u.username === username);
+                const user = db.prepare("SELECT username, salt, hash FROM users WHERE username = ?").get(username);
                 
                 if (user) {
                     const hash = crypto.scryptSync(password, user.salt, 64).toString('hex');
                     if (hash === user.hash) {
                         const token = crypto.randomBytes(32).toString('hex');
-                        ACTIVE_SESSIONS.set(token, { username: user.username, createdAt: Date.now() });
+                        const expiresAt = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
+                        db.prepare("INSERT INTO sessions (token, username, expires_at) VALUES (?, ?, ?)").run(token, user.username, expiresAt);
                         sendJson(res, 200, { ok: true, username: user.username, token });
                     } else {
                         sendJson(res, 401, { ok: false, error: 'Invalid credentials' });
@@ -118,49 +154,73 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.url === '/api/leaderboard') {
-        const lbPath = path.join(process.cwd(), 'data', 'leaderboard.json');
         if (req.method === 'GET') {
             try {
-                const data = await fsp.readFile(lbPath, 'utf8');
-                const scores = JSON.parse(data);
+                const scores = db.prepare("SELECT username, score, wave, date FROM leaderboard ORDER BY score DESC LIMIT 50").all();
                 sendJson(res, 200, { ok: true, scores });
             } catch (e) { sendJson(res, 200, { ok: true, scores: [] }); }
             return;
         }
         if (req.method === 'POST') {
-            let body = '';
-            req.on('data', chunk => { body += chunk; });
-            req.on('end', async () => {
-                const authHeader = req.headers.authorization;
-                if (!authHeader || !authHeader.startsWith('Bearer ')) {
-                    return sendJson(res, 401, { ok: false, error: 'Unauthorized: Missing token' });
-                }
-                const token = authHeader.split(' ')[1];
-                if (!ACTIVE_SESSIONS.has(token)) {
-                    return sendJson(res, 401, { ok: false, error: 'Unauthorized: Invalid token' });
-                }
-                const session = ACTIVE_SESSIONS.get(token);
-
-                try {
-                    const { username, score, wave } = JSON.parse(body);
-                    if (username !== session.username) {
-                        return sendJson(res, 403, { ok: false, error: 'Forbidden: Username mismatch' });
-                    }
-
-                    let scores = [];
-                    try {
-                        const data = await fsp.readFile(lbPath, 'utf8');
-                        scores = JSON.parse(data);
-                    } catch (e) {}
-                    scores.push({ username, score, wave, date: new Date().toISOString() });
-                    scores.sort((a, b) => b.score - a.score);
-                    scores = scores.slice(0, 50);
-                    await fsp.writeFile(lbPath, JSON.stringify(scores, null, 2));
-                    sendJson(res, 200, { ok: true });
-                } catch (e) { sendJson(res, 500, { ok: false, error: e.message }); }
-            });
-            return;
+            return sendJson(res, 403, { ok: false, error: 'Direct submission disabled. Use match endpoints.' });
         }
+    }
+    
+    // Server-Authoritative Match Endpoints
+    if (req.method === 'POST' && req.url === '/api/match/start') {
+        const session = getSession(req);
+        if (!session) return sendJson(res, 401, { ok: false, error: 'Unauthorized' });
+        
+        try {
+            const matchId = crypto.randomBytes(16).toString('hex');
+            db.prepare("INSERT INTO matches (match_id, username, score, status, created_at) VALUES (?, ?, 0, 'active', ?)").run(matchId, session.username, Date.now());
+            return sendJson(res, 200, { ok: true, matchId });
+        } catch (e) { return sendJson(res, 500, { ok: false, error: e.message }); }
+    }
+
+    if (req.method === 'POST' && req.url === '/api/match/kill') {
+        const session = getSession(req);
+        if (!session) return sendJson(res, 401, { ok: false, error: 'Unauthorized' });
+        
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', () => {
+            try {
+                const { matchId, role } = JSON.parse(body);
+                // Standard role scores
+                const rolePoints = { 'normal': 100, 'flanker': 120, 'exploder': 90 };
+                const points = rolePoints[role] || 100;
+                
+                const match = db.prepare("SELECT status FROM matches WHERE match_id = ? AND username = ?").get(matchId, session.username);
+                if (!match || match.status !== 'active') return sendJson(res, 400, { ok: false, error: 'Invalid match' });
+                
+                db.prepare("UPDATE matches SET score = score + ? WHERE match_id = ?").run(points, matchId);
+                sendJson(res, 200, { ok: true });
+            } catch (e) { sendJson(res, 500, { ok: false, error: e.message }); }
+        });
+        return;
+    }
+
+    if (req.method === 'POST' && req.url === '/api/match/end') {
+        const session = getSession(req);
+        if (!session) return sendJson(res, 401, { ok: false, error: 'Unauthorized' });
+        
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', () => {
+            try {
+                const { matchId, wave } = JSON.parse(body);
+                const match = db.prepare("SELECT score, status FROM matches WHERE match_id = ? AND username = ?").get(matchId, session.username);
+                
+                if (!match || match.status !== 'active') return sendJson(res, 400, { ok: false, error: 'Invalid matching' });
+                
+                db.prepare("UPDATE matches SET status = 'ended' WHERE match_id = ?").run(matchId);
+                db.prepare("INSERT INTO leaderboard (username, score, wave, date) VALUES (?, ?, ?, ?)").run(session.username, match.score, wave, new Date().toISOString());
+                
+                sendJson(res, 200, { ok: true, score: match.score });
+            } catch (e) { sendJson(res, 500, { ok: false, error: e.message }); }
+        });
+        return;
     }
 
     if (req.method === 'POST' && req.url && req.url.startsWith('/__logs')) {

@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# IDE settings
+.idea/
+.vscode/
+
+# Test output and metrics
+test-results/
+reports/
+testing_feedback_report.md
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+
+# Logs and environment variables
+*.log
+npm-debug.log*
+.env
+.env.local
+
+# Temporary files
+temp.txt

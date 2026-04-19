@@ -28,5 +28,6 @@ export const state = {
     hitStopEnabled: true,
     freeAmmoUsed: false,
     currentWeaponId: DefaultWeaponId,
-    debugMode: false
+    debugMode: false,
+    activeMatchId: null
 };
