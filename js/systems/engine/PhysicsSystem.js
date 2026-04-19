@@ -78,6 +78,13 @@ export function createPhysicsSystem({ state, refs, collections, callbacks }) {
     function stepPhysics(delta) {
         const physics = refs.physics;
         if (!physics?.world) return;
+
+        // Validation: delta must be a positive non-NaN number
+        if (isNaN(delta) || delta <= 0) {
+            console.warn('Physics skipped: invalid delta', delta);
+            return;
+        }
+
         try {
             if (physics.world.integrationParameters) {
                 physics.world.integrationParameters.dt = delta;
@@ -95,6 +102,15 @@ export function createPhysicsSystem({ state, refs, collections, callbacks }) {
         if (!physics?.playerBody) return;
         try {
             const pos = physics.playerBody.translation();
+            
+            // NaN Safety: check if physics output is valid
+            if (isNaN(pos.x) || isNaN(pos.y) || isNaN(pos.z)) {
+                console.warn('Player physics returned NaN. Resetting body...');
+                physics.playerBody.setTranslation({ x: 0, y: Config.playerHeight, z: 0 }, true);
+                physics.playerBody.setLinvel({ x: 0, y: 0, z: 0 }, true);
+                return;
+            }
+
             const clampedX = Math.max(-WORLD_BOUNDARY, Math.min(WORLD_BOUNDARY, pos.x));
             const clampedZ = Math.max(-WORLD_BOUNDARY, Math.min(WORLD_BOUNDARY, pos.z));
             const bodyY = Config.playerHeight;

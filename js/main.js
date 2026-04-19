@@ -796,39 +796,50 @@ function animate() {
 function animateFrame() {
     requestAnimationFrame(animateFrame);
     
-    // Use a fixed max delta to avoid huge jumps or 0 values
-    const delta = Math.min(0.1, clock.getDelta());
-    const scaledDelta = delta * state.timeScale;
-    
-    if (state.phase === GamePhase.PLAYING) {
-        effectsSystem.updateTimeScale(delta);
+    try {
+        // Use a fixed max delta to avoid huge jumps or 0 values
+        let delta = Math.min(0.1, clock.getDelta());
         
-        if (state.hitStopTimer > 0) {
-            state.hitStopTimer = Math.max(0, state.hitStopTimer - delta);
-        } else {
-            playerSystem.updatePlayer(delta, clock);
-            updateEnemies(delta);
-            environmentManager?.update?.(scaledDelta);
-            physicsSystem.stepPhysics(delta);
-            entityManager.syncEnemyBodies();
-            physicsSystem.syncPlayerFromPhysics(camera, refs.player);
-            effectsSystem.updateParticles(scaledDelta);
-            weaponSystem.updateReloadIndicator();
+        // Epsilon Guard: Prevent 0 or NaN delta which can poison math
+        if (delta <= 0 || isNaN(delta)) {
+            delta = 0.0001;
+        }
 
+        const scaledDelta = delta * state.timeScale;
+        
+        if (state.phase === GamePhase.PLAYING) {
+            effectsSystem.updateTimeScale(delta);
+            
+            if (state.hitStopTimer > 0) {
+                state.hitStopTimer = Math.max(0, state.hitStopTimer - delta);
+            } else {
+                playerSystem.updatePlayer(delta, clock);
+                updateEnemies(delta);
+                environmentManager?.update?.(scaledDelta);
+                physicsSystem.stepPhysics(delta);
+                entityManager.syncEnemyBodies();
+                physicsSystem.syncPlayerFromPhysics(camera, refs.player);
+                effectsSystem.updateParticles(scaledDelta);
+                weaponSystem.updateReloadIndicator();
+
+                if (refs.shieldUniforms) {
+                    refs.shieldUniforms.uTime.value = clock.getElapsedTime();
+                }
+            }
+        } else {
+            // Reduced updates for non-playing phases (e.g. still update particles or uniforms if needed)
             if (refs.shieldUniforms) {
                 refs.shieldUniforms.uTime.value = clock.getElapsedTime();
             }
+            effectsSystem.updateParticles(scaledDelta);
         }
-    } else {
-        // Reduced updates for non-playing phases (e.g. still update particles or uniforms if needed)
-        if (refs.shieldUniforms) {
-            refs.shieldUniforms.uTime.value = clock.getElapsedTime();
-        }
-        effectsSystem.updateParticles(scaledDelta);
+        
+        const shake = effectsSystem.getCameraShakeOffset(delta);
+        effectsSystem.render(shake);
+    } catch (error) {
+        console.error('Frame Error:', error);
+        // Suppress error to keep the loop running, but log it
     }
-    
-    const shake = effectsSystem.getCameraShakeOffset(delta);
-    effectsSystem.render(shake);
 }
 
 

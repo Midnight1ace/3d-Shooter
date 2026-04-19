@@ -167,11 +167,22 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
         if (!waveState.active) return;
         if (waveState.pendingSpawns > 0) return;
         if (collections.enemies.length > 0) return;
+
+        // EMERGENCY SPAWN: If everything cleared but we never spawned anything (failsafe)
         if (waveState.spawnedCount <= 0) {
-            if (waveState.emergencySpawnAttempts >= 1 || state.phase !== GamePhase.PLAYING) return;
+            if (waveState.emergencySpawnAttempts >= 3 || state.phase !== GamePhase.PLAYING) {
+                // Total failure to spawn, forced clear to prevent hang
+                waveState.active = false;
+                state.wave += 1;
+                ui.updateHUD();
+                callbacks?.onWaveCleared?.();
+                return;
+            }
+            
             waveState.emergencySpawnAttempts += 1;
             waveState.pendingSpawns += 1;
             const token = waveState.token;
+            
             const timerId = setTimeout(() => {
                 waveState.spawnTimers.delete(timerId);
                 if (token !== waveState.token) return;
@@ -179,15 +190,19 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
                     if (spawnEnemy('normal')) {
                         waveState.spawnedCount += 1;
                     }
+                } catch (e) {
+                    console.warn('Emergency spawn error:', e);
                 } finally {
                     waveState.pendingSpawns = Math.max(0, waveState.pendingSpawns - 1);
-                    maybeCompleteWave();
+                    // Single-tick delay recursion for safety
+                    requestAnimationFrame(() => maybeCompleteWave());
                 }
-            }, 200);
+            }, 500); // Slower retry
             waveState.spawnTimers.add(timerId);
             return;
         }
 
+        // Normal wave completion logic
         waveState.active = false;
         state.wave += 1;
         ui.updateHUD();
@@ -765,9 +780,12 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
             const direction = _tempDirection.subVectors(playerPos, enemyPos);
             direction.y = 0;
             const distance = direction.length();
-            if (distance > 0.001) {
+            if (distance > 0.0001) { // Hard epsilon
                 direction.normalize();
                 enemy.mesh.rotation.y = Math.atan2(direction.x, direction.z);
+            } else {
+                // If distance is effectively zero, use current rotation to avoid NaN
+                direction.set(0, 0, 0);
             }
 
             const moveDir = _tempMoveDir.copy(direction);
@@ -801,7 +819,12 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
                             moveDir.copy(direction);
                         } else {
                             const tangent = _tempTangent.set(-direction.z, 0, direction.x).multiplyScalar(enemy.strafeDir || 1);
-                            moveDir.copy(tangent).addScaledVector(direction, archetype.strafeForwardBias).normalize();
+                            moveDir.copy(tangent).addScaledVector(direction, archetype.strafeForwardBias);
+                            if (moveDir.lengthSq() > 0.00001) {
+                                moveDir.normalize();
+                            } else {
+                                moveDir.copy(direction); // Fallback to chase if tangent calculation fails
+                            }
                             targetLean = -(enemy.strafeDir || 1) * archetype.leanAngle;
                         }
                     }
@@ -841,7 +864,7 @@ export function createEntityManager({ state, config, refs, collections, ui, audi
 
             setFlankerLean(enemy, archetype.id === 'flanker' ? targetLean : 0, scaledDelta);
 
-            if (shouldMove && moveDir.lengthSq() > 0.0001) {
+            if (shouldMove && moveDir.lengthSq() > 0.00001) {
                 moveDir.normalize();
                 const speed = enemy.speed * 60 * timeScale;
                 if (usePhysics && enemy.body) {
